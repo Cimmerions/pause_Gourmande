@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -8,16 +8,105 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Minus, Plus, Trash2, ShoppingBag } from "lucide-react";
 import { toast } from "sonner";
 import { useCart } from "@/lib/cart-store";
-import { formatFCFA } from "@/lib/products";
+import { formatFCFA } from "../lib/products";
+import { findCustomer } from "@/lib/customers";
+import { getRewards } from "@/lib/rewards";
 
 export function CartSheet({ children }: { children: React.ReactNode }) {
   const { items, setQty, remove, setNote, total, submitOrder } = useCart();
+  const subtotal = total;
   const [open, setOpen] = useState(false);
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
+  const [referralCode, setReferralCode] = useState("");
+  const [customer, setCustomer] = useState<any>(null);
+  const [customerPoints, setCustomerPoints] = useState(0);
+  const [usePoints, setUsePoints] = useState(false);
   const [mode, setMode] = useState<"today" | "tomorrow">("today");
   const [time, setTime] = useState("12:30");
   const [submitting, setSubmitting] = useState(false);
+  const [rewards, setRewards] = useState<any[]>([]);
+  const [selectedReward, setSelectedReward] = useState<any>(null);
+  const searchTimeout = useRef<NodeJS.Timeout | null>(null);
+
+  let rewardDiscount = 0;
+
+  if (selectedReward?.type === "discount") {
+
+    const percent = parseInt(
+      selectedReward.value.replace(/\D/g, "")
+    );
+
+    rewardDiscount = Math.round(
+      subtotal * percent / 100
+    );
+
+  }
+
+
+  useEffect(() => {
+
+    if (searchTimeout.current) {
+      clearTimeout(searchTimeout.current);
+    }
+
+
+    if (phone.length !== 8) {
+      setCustomer(null);
+      setCustomerPoints(0);
+      setRewards([]);
+      return;
+    }
+
+
+    searchTimeout.current = setTimeout(async () => {
+
+
+      // Recherche client
+      await loadCustomer(phone);
+
+
+      // Recherche récompenses
+      const rewardsData = await getRewards(phone);
+
+      setRewards(rewardsData);
+
+
+    }, 500);
+
+
+
+    return () => {
+
+      if (searchTimeout.current) {
+        clearTimeout(searchTimeout.current);
+      }
+
+    };
+
+
+  }, [phone]);
+
+  async function loadCustomer(phone: string) {
+
+    if (phone.length !== 8) {
+      setCustomer(null);
+      setCustomerPoints(0);
+      return;
+    }
+
+    const c = await findCustomer(phone);
+
+    if (!c) {
+      setCustomer(null);
+      setCustomerPoints(0);
+      return;
+    }
+
+    setCustomer(c);
+    setCustomerPoints(c.points ?? 0);
+
+  }
 
   const validate = async () => {
     if (!items.length) return;
@@ -27,14 +116,46 @@ export function CartSheet({ children }: { children: React.ReactNode }) {
     }
     setSubmitting(true);
     await new Promise((r) => setTimeout(r, 500));
-    const order = submitOrder({ customerName: name, phone, mode, time });
-    const earned = order?.pointsEarned ?? 0;
-    toast.success(`Commande envoyée ! Vous avez gagné ${earned} pépites 🎉`, {
-      description: `Paiement à la livraison • ${mode === "today" ? "Aujourd'hui" : "Demain"} à ${time}`,
+
+    const order = await submitOrder({
+      customerName: name,
+      phone,
+      mode,
+      time,
+      rewardId: selectedReward?.id,
+      total: finalTotal,
+      usedPoints: pointsDiscount,
+      referralCode: referralCode.trim(),
     });
+
+    const earned = order?.pointsEarned ?? 0;
+
+    const referralMessage = order?.referralCode
+      ? `Code ${order.referralCode} ✓ • `
+      : "";
+
+    toast.success(
+      `Commande envoyée ! Vous avez gagné ${earned} pépites 🎉`,
+      {
+        description:
+          `${referralMessage}Paiement à la livraison • ${
+            mode === "today" ? "Aujourd'hui" : "Demain"
+          } à ${time}`,
+      }
+    );
     setSubmitting(false);
     setOpen(false);
   };
+
+  const pointsDiscount = usePoints
+    ? Math.min(customerPoints, subtotal)
+    : 0;
+
+
+  const finalTotal = Math.max(
+    0,
+    subtotal - rewardDiscount - pointsDiscount
+  );
 
   return (
     <Sheet open={open} onOpenChange={setOpen}>
@@ -121,7 +242,80 @@ export function CartSheet({ children }: { children: React.ReactNode }) {
                   </div>
                   <div className="space-y-1">
                     <Label className="text-xs">Téléphone</Label>
-                    <Input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="+228…" />
+                    <Input
+                      value={phone}
+                      onChange={(e) => {
+                        setPhone(e.target.value);
+                      }}
+                      placeholder="+228…"
+                    />
+
+                  <div className="space-y-2">
+                    <Label htmlFor="referralCode">
+                      Code parrainage <span className="text-muted-foreground">(facultatif)</span>
+                    </Label>
+
+                    <Input
+                      id="referralCode"
+                      type="text"
+                      placeholder="Ex. PG-A7K92B"
+                      value={referralCode}
+                      onChange={(e) => setReferralCode(e.target.value.toUpperCase())}
+                      className="rounded-full"
+                      maxLength={9}
+                    />
+
+                    <p className="text-xs text-muted-foreground">
+                      Vous avez reçu un code d'un ami ? Entrez-le ici.
+                    </p>
+                 </div>
+
+                    {rewards.length > 0 && (
+                      <div className="space-y-2 mt-4">
+
+                        <p className="text-xs font-bold uppercase tracking-widest text-brand-gold">
+                          Vos récompenses disponibles
+                        </p>
+
+                    {rewards.map((reward)=>(
+                      <button
+                      key={reward.id}
+                      type="button"
+                      onClick={() =>
+                        setSelectedReward(
+                          selectedReward?.id === reward.id
+                            ? null
+                            : reward
+                        )
+                      }
+                      className={
+                        "w-full rounded-xl border p-3 text-left text-sm transition " +
+                        (
+                          selectedReward?.id === reward.id
+                          ? "border-brand-gold bg-brand-gold/10"
+                          : "border-border"
+                        )
+                    }
+                  >
+                    🎁 {reward.value}
+                      </button>
+                  ))}
+
+                </div>
+              )}
+
+                    {customer && (
+
+                      <div className="rounded-xl border border-amber-300 bg-amber-50 p-3 mt-2">
+
+                        <p className="font-semibold text-amber-700">
+                          ⭐ {customerPoints} pépites disponibles
+                        </p>
+
+                     </div>
+
+                    )}
+
                   </div>
                 </div>
 
@@ -161,10 +355,55 @@ export function CartSheet({ children }: { children: React.ReactNode }) {
 
         {items.length > 0 && (
           <div className="border-t p-6 space-y-3 bg-secondary/50">
+
+          {customer && customerPoints > 0 && (
+
+            <label className="flex items-center justify-between rounded-xl border p-3 cursor-pointer">
+
+              <span>
+                Utiliser mes pépites
+              </span>
+
+              <input
+                type="checkbox"
+                checked={usePoints}
+                onChange={(e) => setUsePoints(e.target.checked)}
+              />
+
+            </label>
+
+          )}
             <div className="flex justify-between items-baseline">
               <span className="text-sm text-muted-foreground">Total (paiement à la livraison)</span>
-              <span className="text-2xl font-semibold">{formatFCFA(total)}</span>
+              <div className="text-right">
+
+                <p className="text-sm text-muted-foreground">
+                  {formatFCFA(subtotal)}
+                </p>
+
+                {rewardDiscount > 0 && (
+                  <p className="text-sm text-emerald-600">
+                    − {formatFCFA(rewardDiscount)}
+                  </p>
+                )}
+
+                <p className="text-2xl font-semibold">
+                  {formatFCFA(finalTotal)}
+                </p>
+
+              </div>
+
             </div>
+
+            {pointsDiscount > 0 && (
+
+            <p className="text-sm text-green-600">
+              Réduction fidélité :
+              - {formatFCFA(pointsDiscount)}
+            </p>
+
+            )}
+
             <p className="text-xs text-brand-gold font-medium">
               +{Math.floor(total / 100)} pépites de fidélité offertes
             </p>

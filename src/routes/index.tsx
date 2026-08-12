@@ -1,14 +1,17 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect} from "react";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { Search, ShoppingCart, Heart, Sparkles, Copy, MapPin, Clock, LayoutDashboard } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
-import { products, formatFCFA } from "@/lib/products";
+import {getProducts, formatFCFA, type Product} from "@/lib/products";
 import { useCart } from "@/lib/cart-store";
 import { ProductCard } from "@/components/ProductCard";
 import { LuckyWheel } from "@/components/LuckyWheel";
 import { CartSheet } from "@/components/CartSheet";
+import { findCustomer } from "@/lib/customers";
+import { getActiveLocation, type Location } from "@/lib/locations";
+import { LocationMap } from "@/components/LocationMap";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -32,9 +35,52 @@ export const Route = createFileRoute("/")({
 const CATEGORIES = ["Tout", "Crêpes", "Gaufres", "Boissons"] as const;
 
 function Home() {
-  const { count, total, points } = useCart();
+  const [products,setProducts]=useState<Product[]>([]);
+  const { count, total } = useCart();
+  const [points, setPoints] = useState(0);
+  const [loyaltyPhone, setLoyaltyPhone] = useState("");
+  const [referralCode, setReferralCode] = useState("");
   const [query, setQuery] = useState("");
   const [cat, setCat] = useState<(typeof CATEGORIES)[number]>("Tout");
+  const [location, setLocation] = useState<Location | null>(null);
+
+  useEffect(() => {
+    async function loadHomeData() {
+      const [productsData, locationData] = await Promise.all([
+        getProducts(),
+        getActiveLocation(),
+      ]);
+
+      setProducts(productsData);
+      setLocation(locationData);
+    }
+
+    loadHomeData();
+  }, []);
+
+    async function checkLoyalty(phone: string) {
+      setLoyaltyPhone(phone);
+
+      if (phone.length !== 8) {
+        setPoints(0);
+        setReferralCode("");
+        return;
+      }
+
+      const customer = await findCustomer(phone);
+
+      if (!customer) {
+        setPoints(0);
+        setReferralCode("");
+
+        toast.info("Aucun espace fidélité trouvé pour ce numéro.");
+
+        return;
+      }
+
+      setPoints(customer.points ?? 0);
+      setReferralCode(customer.referral_code ?? "");
+    }
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -43,13 +89,18 @@ function Home() {
         (cat === "Tout" || p.category === cat) &&
         (!q || p.name.toLowerCase().includes(q) || p.description.toLowerCase().includes(q)),
     );
-  }, [query, cat]);
+  }, [products, query, cat]);
 
   const nextRewardAt = 1000;
   const progress = Math.min(100, Math.round((points / nextRewardAt) * 100));
 
   const copyReferral = () => {
-    navigator.clipboard.writeText("PAUSE-GOURMANDE");
+    if (!referralCode) {
+      toast.error("Entrez d'abord votre numéro de téléphone.");
+      return;
+    }
+
+    navigator.clipboard.writeText(referralCode);
     toast.success("Code parrainage copié !");
   };
 
@@ -64,9 +115,16 @@ function Home() {
             </div>
             <div>
               <p className="text-[10px] font-semibold text-brand-gold uppercase tracking-[0.12em]">
-                En direct du campus
+                {location ? "En direct" : "Disponible en ligne"}
               </p>
-              <p className="text-sm font-semibold">Université de Lomé • 09h — 15h</p>
+
+              <p className="text-sm font-semibold">
+                {location
+                  ? `${location.name} • ${location.start_time?.slice(0, 5) ?? ""} — ${
+                      location.end_time?.slice(0, 5) ?? ""
+                    }`
+                  : "Commandes en ligne"}
+              </p>
             </div>
           </a>
           <div className="flex items-center gap-2">
@@ -259,6 +317,34 @@ function Home() {
                 Cumulez des pépites et transformez-les en gourmandises.
               </p>
               <div className="p-6 bg-brand-warm rounded-[28px] ring-1 ring-brand-gold/5">
+
+              <div className="mb-6">
+                <div className="flex items-center gap-2 mb-3">
+                  <div className="size-9 rounded-xl bg-brand-gold/15 flex items-center justify-center">
+                    <span className="text-lg">📱</span>
+              </div>
+
+              <div>
+                <p className="font-semibold text-sm">
+                  Retrouvez votre espace fidélité
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  Entrez votre numéro pour voir vos pépites et votre code parrainage
+                </p>
+              </div>
+            </div>
+
+            <Input
+              type="tel"
+              inputMode="numeric"
+              maxLength={8}
+              placeholder="Ex. 90123456"
+              value={loyaltyPhone}
+              onChange={(e) => checkLoyalty(e.target.value.replace(/\D/g, ""))}
+              className="h-14 text-center text-lg font-semibold rounded-2xl bg-white border-2 border-brand-gold/20 focus-visible:border-brand-gold focus-visible:ring-brand-gold/20"
+            />
+          </div>
+
                 <div className="flex items-center justify-between mb-6">
                   <div className="flex items-center gap-4">
                     <div className="size-12 bg-brand-gold rounded-2xl flex items-center justify-center text-white shadow-lg shadow-brand-gold/20">
@@ -298,7 +384,9 @@ function Home() {
               </p>
               <div className="flex flex-col sm:flex-row gap-3 relative">
                 <div className="flex-1 bg-white/10 backdrop-blur border border-white/20 rounded-2xl px-5 py-4 font-mono text-sm flex items-center justify-between">
-                  <span>PAUSE-GOURMANDE</span>
+                  <span>
+                    {referralCode || "Entrez votre numéro dans l'espace douceur"}
+                  </span>
                   <span className="text-[10px] font-bold opacity-50 uppercase">Code</span>
                 </div>
                 <button
@@ -314,43 +402,80 @@ function Home() {
       </section>
 
       {/* Localisation */}
+      {location && (
       <section className="pb-24">
         <div className="max-w-7xl mx-auto px-4">
           <div className="bg-card p-8 md:p-12 rounded-[40px] ring-1 ring-border grid md:grid-cols-2 gap-8 items-center">
             <div>
               <p className="text-xs font-bold uppercase tracking-widest text-brand-gold mb-3">
-                Où suis-je aujourd'hui ?
+                Où sommes-nous aujourd'hui ?
               </p>
-              <h3 className="text-3xl font-semibold mb-4">Université de Lomé</h3>
+
+              <h3 className="text-3xl font-semibold mb-4">
+                {location.name}
+              </h3>
+
               <p className="text-muted-foreground mb-6 leading-relaxed">
-                Notre stand est installé devant le bâtiment principal. Cherchez la fumée dorée et
-                l'odeur du caramel — vous ne pouvez pas nous rater.
+                {location.address}
               </p>
+
               <div className="flex flex-wrap gap-6 text-sm">
                 <div className="flex items-center gap-2">
                   <MapPin className="size-4 text-brand-gold" />
-                  <span>Campus principal, Lomé</span>
+                  <span>
+                    {location.address}
+                  </span>
                 </div>
-                <div className="flex items-center gap-2">
-                  <Clock className="size-4 text-brand-gold" />
-                  <span>09h00 – 15h00</span>
-                </div>
+
+                {location?.start_time && location?.end_time && (
+                  <div className="flex items-center gap-2">
+                    <Clock className="size-4 text-brand-gold" />
+                    <span>
+                      {location.start_time.slice(0, 5)} –{" "}
+                      {location.end_time.slice(0, 5)}
+                    </span>
+                  </div>
+                )}
               </div>
+
+              {location?.latitude != null && location?.longitude != null && (
+                <Button
+                  asChild
+                  className="mt-6 rounded-full"
+                >
+                  <a
+                    href={`https://www.google.com/maps/dir/?api=1&destination=${location.latitude},${location.longitude}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    <MapPin className="size-4 mr-2" />
+                    Itinéraire
+                  </a>
+                </Button>
+              )}
             </div>
-            <div className="aspect-[4/3] rounded-3xl bg-brand-warm ring-1 ring-border relative overflow-hidden">
-              <div className="absolute inset-0 flex items-center justify-center">
-                <MapPin className="size-16 text-brand-gold/40" />
-              </div>
-              <div className="absolute bottom-4 left-4 right-4 bg-white/90 backdrop-blur rounded-2xl p-4">
-                <p className="text-xs font-bold uppercase tracking-widest text-brand-gold">
-                  Prochain arrêt
-                </p>
-                <p className="font-semibold">Demain — Zone Industrielle • 11h — 14h</p>
-              </div>
+
+            <div className="aspect-[4/3] rounded-3xl overflow-hidden ring-1 ring-border relative">
+              {location?.latitude != null && location?.longitude != null ? (
+                <LocationMap
+                  latitude={location.latitude}
+                  longitude={location.longitude}
+                  name={location.name}
+                  address={location.address}
+                />
+              ) : (
+                <div className="h-full flex items-center justify-center bg-brand-warm">
+                  <div className="text-center text-muted-foreground">
+                    <MapPin className="size-12 mx-auto mb-3 text-brand-gold/50" />
+                    <p>Carte indisponible</p>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </div>
       </section>
+      )}
 
       {/* Floating cart */}
       {count > 0 && (

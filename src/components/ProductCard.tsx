@@ -1,7 +1,6 @@
 import { Plus } from "lucide-react";
 import { toast } from "sonner";
-import type { Product } from "@/lib/products";
-import { formatFCFA } from "@/lib/products";
+import { getProducts, formatFCFA, type Product } from "@/lib/products";
 import { useCart } from "@/lib/cart-store";
 
 export function ProductCard({ product }: { product: Product }) {
@@ -15,14 +14,17 @@ export function ProductCard({ product }: { product: Product }) {
   return (
     <div className="group bg-card p-4 rounded-[28px] ring-1 ring-border flex flex-col transition-shadow hover:shadow-xl hover:shadow-brand-gold/5">
       <div className="relative w-full aspect-square rounded-[20px] overflow-hidden mb-6 bg-secondary">
-        <img
-          src={product.image}
-          alt={product.name}
-          loading="lazy"
-          width={1024}
-          height={1024}
-          className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
-        />
+      <img
+        src={product.image || "/placeholder.png"}
+        alt={product.name}
+        loading="lazy"
+        width={1024}
+        height={1024}
+        className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
+        onError={(e) => {
+          e.currentTarget.src = "/placeholder.png";
+        }}
+      />
         {product.badge && (
           <span className="absolute top-3 left-3 bg-brand-deep text-brand-cream text-[10px] font-bold uppercase tracking-widest px-3 py-1 rounded-full">
             {product.badge}
@@ -40,7 +42,7 @@ export function ProductCard({ product }: { product: Product }) {
           {product.description}
         </p>
         <p className="text-[11px] text-muted-foreground/70 mb-6">
-          {product.ingredients.join(" • ")}
+        {product.ingredients?.join(" • ")}
         </p>
         <button
           onClick={onAdd}

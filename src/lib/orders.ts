@@ -1,0 +1,274 @@
+import { supabase } from "./supabase";
+import type { Order } from "./cart-store";
+import {
+  findCustomer,
+  createCustomer,
+  updateCustomerPoints,
+  findCustomerByReferralCode,
+} from "./customers";
+
+import { saveReward } from "./rewards";
+
+export async function createOrder(
+  order: Order,
+  referralCode?: string
+) {
+
+  try {
+
+    let acceptedReferralCode: string | null = null;
+
+    const { data, error } = await supabase
+      .from("orders")
+      .insert({
+        customer_name: order.customerName,
+        phone: order.phone,
+        mode: order.mode,
+        time: order.time,
+        total: order.total,
+        status: order.status,
+      })
+      .select()
+      .single();
+
+
+    if (error) {
+      console.error("Erreur création commande :", error);
+      return null;
+    }
+
+
+    const items = order.lines.map((item) => ({
+      order_id: data.id,
+      product_id: item.productId,
+      name: item.name,
+      quantity: item.qty,
+      price: item.price,
+      note: item.note ?? null,
+    }));
+
+
+    const { error: itemError } = await supabase
+  .from("order_items")
+  .insert(items);
+
+if (itemError) {
+  console.error("Erreur lignes commande :", itemError);
+  return null;
+}
+
+// Gestion de la fidélité
+let customer = await findCustomer(order.phone);
+
+if (!customer) {
+  let referredBy: number | undefined = undefined;
+  let referrer = null;
+
+  // Vérification du code de parrainage
+  if (referralCode?.trim()) {
+    referrer = await findCustomerByReferralCode(
+      referralCode.trim().toUpperCase()
+    );
+
+    // Empêcher l'auto-parrainage
+    if (referrer && referrer.phone !== order.phone) {
+      referredBy = referrer.id;
+      acceptedReferralCode = referralCode.trim().toUpperCase();
+    } else {
+      referrer = null;
+    }
+  }
+
+  // Création du nouveau client
+  customer = await createCustomer(
+    order.customerName,
+    order.phone,
+    referredBy
+  );
+
+  // Attribution des récompenses de parrainage
+  if (customer && referrer) {
+    // Récompense du parrain
+    await saveReward(
+      referrer.phone,
+      "Garniture premium offerte"
+    );
+
+    // Récompense du filleul
+    await saveReward(
+      customer.phone,
+      "Garniture premium offerte"
+    );
+
+    console.log("PARRAINAGE VALIDÉ :", {
+      parrain: referrer.phone,
+      filleul: customer.phone,
+    });
+  }
+}
+
+if (customer) {
+
+  const earnedPoints = order.pointsEarned;
+
+  const usedPoints = order.usedPoints ?? 0;
+
+  const newBalance = Math.max(
+    0,
+    customer.points - usedPoints + earnedPoints
+  );
+
+  await updateCustomerPoints(
+    customer.id,
+    newBalance
+  );
+
+}
+
+return {
+  data,
+  acceptedReferralCode,
+};
+
+
+  } catch (error) {
+
+    console.error("Erreur inattendue :", error);
+    return null;
+
+  }
+}
+
+export async function getOrders() {
+    const { data, error } = await supabase
+      .from("orders")
+      .select(`
+        *,
+        order_items (*)
+      `)
+      .order("created_at", { ascending: false });
+  
+    if (error) {
+      console.error(error);
+      return [];
+    }
+  
+    return data;
+  }
+
+  export async function updateOrderStatus(
+    id: string,
+    status: string
+  ) {
+  
+    // récupérer la commande
+    const { data: order, error: orderError } = await supabase
+      .from("orders")
+      .select("*")
+      .eq("id", id)
+      .single();
+  
+  
+    if (orderError || !order) {
+      console.error("Commande introuvable :", orderError);
+      return null;
+    }
+  
+  
+    // Si on annule une commande
+    if (status === "cancelled" && order.status !== "cancelled") {
+  
+      const customer = await findCustomer(order.phone);
+
+      console.log("CLIENT ANNULATION :", customer);
+      
+      
+      if (customer) {
+      
+        const earnedPoints = Math.floor(order.total / 100);
+      
+        const newPoints = Math.max(
+          0,
+          (customer.points ?? 0) - earnedPoints
+        );
+      
+      
+        await updateCustomerPoints(
+          customer.id,
+          newPoints
+        );
+      
+      
+        console.log(
+          "POINTS RETIRES :",
+          earnedPoints
+        );
+      
+        console.log(
+          "NOUVEAU SOLDE :",
+          newPoints
+        );
+      
+      }
+    }
+  
+  
+    // mise à jour du statut
+    const { data, error } = await supabase
+      .from("orders")
+      .update({ status })
+      .eq("id", id)
+      .select()
+      .single();
+  
+  
+  
+    return { data, error };
+  }
+
+  export async function deleteOrder(id: string) {
+
+    // 1. Récupérer la commande avant suppression
+    const { data: order, error } = await supabase
+      .from("orders")
+      .select("*")
+      .eq("id", id)
+      .single();
+  
+  
+    if (error || !order) {
+      console.error("Commande introuvable :", error);
+      return null;
+    }
+  
+  
+    // 2. Trouver le client
+    const customer = await findCustomer(order.phone);
+  
+  
+    // 3. Retirer les pépites gagnées
+    if (customer) {
+  
+      const earnedPoints = Math.floor(order.total / 100);
+  
+      const newPoints = Math.max(
+        0,
+        customer.points - earnedPoints
+      );
+  
+  
+      await updateCustomerPoints(
+        customer.id,
+        newPoints
+      );
+  
+    }
+  
+  
+    // 4. Supprimer la commande
+    return await supabase
+      .from("orders")
+      .delete()
+      .eq("id", id);
+  
+  }

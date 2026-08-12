@@ -1,5 +1,8 @@
-import { useMemo, useState } from "react";
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { useEffect, useMemo, useState } from "react";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { supabase } from "@/lib/supabase";
+import { toast } from "sonner";
+import { Switch } from "@/components/ui/switch";
 import {
   ArrowLeft,
   TrendingUp,
@@ -9,10 +12,18 @@ import {
   Trash2,
   Check,
   Clock,
+  LogOut,
+  RefreshCw,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useCart, type Order } from "@/lib/cart-store";
-import { products, formatFCFA } from "@/lib/products";
+import { getProducts, formatFCFA, type Product } from "@/lib/products";
+import { getOrders, updateOrderStatus } from "@/lib/orders";
+import {
+  getLocation,
+  updateLocation,
+  type Location,
+} from "@/lib/locations";
 
 export const Route = createFileRoute("/dashboard")({
   head: () => ({
@@ -44,8 +55,82 @@ function startOfToday() {
 }
 
 function Dashboard() {
-  const { orders, points, setOrderStatus } = useCart();
+  const [orders, setOrders] = useState<Order[]>([]);
+  const [loading, setLoading] = useState(true);
+  const points = 0;
   const [range, setRange] = useState<Range>("7d");
+  const [products, setProducts] = useState<Product[]>([]);
+  const navigate = useNavigate();
+  const [checkingAuth, setCheckingAuth] = useState(true);
+  const [location, setLocation] = useState<Location | null>(null);
+  const [savingLocation, setSavingLocation] = useState(false);
+
+  async function loadData() {
+
+    setLoading(true);
+
+    const productsData = await getProducts();
+    const ordersData = await getOrders();
+    const locationData = await getLocation();
+
+    setProducts(productsData);
+    setLocation(locationData);
+
+    setOrders(
+      ordersData.map((order: any) => ({
+        ...order,
+        customerName: order.customer_name,
+        createdAt: new Date(order.created_at).getTime(),
+        lines: (order.order_items ?? []).map((item: any) => ({
+          productId: item.product_id,
+          name: item.name,
+          qty: item.quantity,
+          price: item.price,
+          category: "",
+          note: item.note ?? undefined,
+        })),
+        pointsEarned: Math.floor(order.total / 100),
+      }))
+    );
+
+    setLoading(false);
+
+  }
+
+
+  useEffect(() => {
+
+    loadData();
+
+  }, []);
+
+  useEffect(() => {
+
+  async function checkAdmin(){
+
+    const {
+      data: { session }
+    } = await supabase.auth.getSession();
+
+
+    if (!session) {
+
+      navigate({
+        to:"/admin-login"
+      });
+
+      return;
+    }
+
+
+    setCheckingAuth(false);
+
+  }
+
+
+  checkAdmin();
+
+}, []);
 
   const filtered = useMemo(() => {
     const cfg = RANGES.find((r) => r.key === range)!;
@@ -112,9 +197,18 @@ function Dashboard() {
       d.setDate(d.getDate() - i);
       const start = d.getTime();
       const end = start + 86400_000;
-      const total = orders
-        .filter((o) => o.status !== "cancelled" && o.createdAt >= start && o.createdAt < end)
-        .reduce((s, o) => s + o.total, 0);
+      const matchingOrders = orders.filter(
+        (o) =>
+          o.status !== "cancelled" &&
+          o.createdAt >= start &&
+          o.createdAt < end
+      );
+
+      const total = matchingOrders.reduce(
+        (s, o) => s + o.total,
+        0
+      );
+
       buckets.push({
         label: d.toLocaleDateString("fr-FR", { weekday: "short", day: "2-digit" }),
         total,
@@ -125,6 +219,13 @@ function Dashboard() {
 
   const maxDaily = Math.max(1, ...daily.map((d) => d.total));
 
+  if (checkingAuth) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        Vérification...
+      </div>
+    );
+  }
   return (
     <div className="min-h-screen bg-brand-cream text-foreground">
       {/* Header */}
@@ -160,10 +261,89 @@ function Dashboard() {
               </button>
             ))}
           </div>
+
+          <Button
+            variant="outline"
+            size="sm"
+            className="rounded-full flex items-center gap-2"
+            onClick={loadData}
+            disabled={loading}
+          >
+            <RefreshCw
+              className={
+                "size-4 " + (loading ? "animate-spin" : "")
+              }
+            />
+
+            <span className="hidden sm:inline">
+              Actualiser
+            </span>
+          </Button>
+
+          <Button
+            variant="outline"
+            size="sm"
+            className="rounded-full"
+            onClick={async () => {
+
+              await supabase.auth.signOut();
+
+              navigate({
+                to: "/admin-login",
+              });
+
+            }}
+          >
+           <LogOut className="size-4" />
+           <span className="hidden sm:inline">
+            Déconnexion
+            </span>
+          </Button>
+
         </div>
       </header>
-
       <main className="max-w-7xl mx-auto px-4 py-10 space-y-10">
+
+      {/* Localisation */}
+      {location && (
+      <section className="bg-card rounded-[28px] p-6 ring-1 ring-border">
+        <div className="mb-6">
+          <h2 className="text-lg font-semibold">Localisation du jour</h2>
+          <p className="text-xs text-muted-foreground">
+           Modifiez ici l'emplacement visible par les clients.
+          </p>
+        </div>
+
+      {location ? (
+          <LocationEditor
+            location={location}
+            saving={savingLocation}
+            onSave={async (values) => {
+              setSavingLocation(true);
+
+              const updated = await updateLocation(
+                location.id,
+                values
+              );
+
+              if (updated) {
+                setLocation(updated);
+                toast.success("Localisation mise à jour.");
+              } else {
+                toast.error("Impossible de mettre à jour la localisation.");
+              }
+
+              setSavingLocation(false);
+            }}
+          />
+        ) : (
+          <p className="text-sm text-muted-foreground">
+            Aucune localisation active.
+          </p>
+        )}
+      </section>
+    )}
+
         {/* KPIs */}
         <section className="grid grid-cols-2 lg:grid-cols-5 gap-4">
           <KPI
@@ -206,16 +386,24 @@ function Dashboard() {
             </div>
             <div className="flex items-end gap-3 h-56">
               {daily.map((d) => {
-                const h = Math.max(4, Math.round((d.total / maxDaily) * 100));
+                const h =
+                  d.total > 0
+                    ? Math.max(8, Math.round((d.total / maxDaily) * 100))
+                    : 2;
+
                 return (
-                  <div key={d.label} className="flex-1 flex flex-col items-center gap-2">
+                  <div
+                    key={d.label}
+                    className="flex-1 flex flex-col items-center gap-2 h-full"
+                  >
                     <div className="w-full flex-1 flex items-end">
                       <div
-                        className="w-full rounded-t-xl bg-gradient-to-t from-brand-gold to-brand-gold/60 transition-all"
+                        className="w-full rounded-t-xl bg-brand-gold transition-all duration-500"
                         style={{ height: `${h}%` }}
-                        title={formatFCFA(d.total)}
+                        title={`${formatFCFA(d.total)}`}
                       />
                     </div>
+
                     <span className="text-[10px] font-medium text-muted-foreground capitalize">
                       {d.label}
                     </span>
@@ -272,7 +460,34 @@ function Dashboard() {
           ) : (
             <div className="divide-y divide-border">
               {filtered.slice(0, 25).map((o) => (
-                <OrderRow key={o.id} order={o} onStatus={setOrderStatus} />
+                <OrderRow
+                key={o.id}
+                order={o}
+                onStatus={async (id, status) => {
+
+                  await updateOrderStatus(id, status);
+
+                  const updated = await getOrders();
+
+                  setOrders(
+                    updated.map((order: any) => ({
+                      ...order,
+                      customerName: order.customer_name,
+                      createdAt: new Date(order.created_at).getTime(),
+                      lines: (order.order_items ?? []).map((item:any)=>({
+                        productId:item.product_id,
+                        name:item.name,
+                        qty:item.quantity,
+                        price:item.price,
+                        category:"",
+                        note: item.note ?? undefined,
+                      })),
+                      pointsEarned: Math.floor(order.total / 100),
+                    }))
+                  );
+
+                }}
+              />
               ))}
             </div>
           )}
@@ -369,9 +584,21 @@ function OrderRow({
             {order.mode === "today" ? "Aujourd'hui" : "Demain"} à {order.time}
           </span>
         </p>
-        <p className="text-sm mt-2 text-foreground/80 truncate">
-          {order.lines.map((l) => `${l.qty}× ${l.name}`).join(" · ")}
-        </p>
+        <div className="text-sm mt-2 text-foreground/80 space-y-1">
+          {order.lines.map((l) => (
+            <div key={l.productId}>
+              <span>
+                {l.qty}× {l.name}
+              </span>
+
+             {l.note && (
+              <p className="text-xs text-amber-700 ml-4 mt-0.5">
+                📝 {l.note}
+              </p>
+              )}
+            </div>
+          ))}
+        </div>
       </div>
       <div className="flex items-center gap-4 md:gap-6 md:justify-end">
         <div className="text-right">
@@ -404,6 +631,159 @@ function OrderRow({
             </Button>
           )}
         </div>
+      </div>
+    </div>
+  );
+}
+
+function LocationEditor({
+  location,
+  saving,
+  onSave,
+}: {
+  location: Location;
+  saving: boolean;
+  onSave: (values: {
+    name: string;
+    address: string;
+    latitude: number | null;
+    longitude: number | null;
+    start_time: string;
+    end_time: string;
+    active: boolean;
+  }) => Promise<void>;
+}) {
+  const [active, setActive] = useState(location.active);
+  const [name, setName] = useState(location.name);
+  const [address, setAddress] = useState(location.address ?? "");
+  const [latitude, setLatitude] = useState(
+    location.latitude?.toString() ?? ""
+  );
+  const [longitude, setLongitude] = useState(
+    location.longitude?.toString() ?? ""
+  );
+  const [startTime, setStartTime] = useState(
+    location.start_time?.slice(0, 5) ?? "09:00"
+  );
+  const [endTime, setEndTime] = useState(
+    location.end_time?.slice(0, 5) ?? "15:00"
+  );
+
+  async function handleSave() {
+    const lat = latitude.trim()
+      ? Number(latitude.replace(",", "."))
+      : null;
+
+    const lng = longitude.trim()
+      ? Number(longitude.replace(",", "."))
+      : null;
+
+    if (
+      (lat !== null && Number.isNaN(lat)) ||
+      (lng !== null && Number.isNaN(lng))
+    ) {
+      alert("Les coordonnées GPS doivent être numériques.");
+      return;
+    }
+
+    await onSave({
+      name: name.trim(),
+      address: address.trim(),
+      latitude: lat,
+      longitude: lng,
+      start_time: startTime,
+      end_time: endTime,
+      active,
+    });
+  }
+
+  return (
+    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+
+      <div className="md:col-span-2 flex items-center justify-between rounded-2xl border p-4 bg-background">
+        <div>
+          <p className="font-medium">
+            Afficher la localisation sur le site
+          </p>
+          <p className="text-xs text-muted-foreground mt-1">
+            Désactivez cette option lorsqu'il n'y a pas de présence physique.
+          </p>
+        </div>
+
+        <Switch
+          checked={active}
+          onCheckedChange={setActive}
+        />
+      </div>
+
+      <div className="space-y-1">
+        <label className="text-xs font-medium">Lieu</label>
+        <input
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          className="w-full h-11 rounded-xl border bg-background px-4 text-sm"
+          placeholder="Université de Lomé"
+        />
+      </div>
+
+      <div className="space-y-1">
+        <label className="text-xs font-medium">Adresse</label>
+        <input
+          value={address}
+          onChange={(e) => setAddress(e.target.value)}
+          className="w-full h-11 rounded-xl border bg-background px-4 text-sm"
+          placeholder="Campus principal, Lomé"
+        />
+      </div>
+
+      <div className="space-y-1">
+        <label className="text-xs font-medium">Latitude</label>
+        <input
+          value={latitude}
+          onChange={(e) => setLatitude(e.target.value)}
+          className="w-full h-11 rounded-xl border bg-background px-4 text-sm"
+          placeholder="6.173669"
+        />
+      </div>
+
+      <div className="space-y-1">
+        <label className="text-xs font-medium">Longitude</label>
+        <input
+          value={longitude}
+          onChange={(e) => setLongitude(e.target.value)}
+          className="w-full h-11 rounded-xl border bg-background px-4 text-sm"
+          placeholder="1.215866"
+        />
+      </div>
+
+      <div className="space-y-1">
+        <label className="text-xs font-medium">Ouverture</label>
+        <input
+          type="time"
+          value={startTime}
+          onChange={(e) => setStartTime(e.target.value)}
+          className="w-full h-11 rounded-xl border bg-background px-4 text-sm"
+        />
+      </div>
+
+      <div className="space-y-1">
+        <label className="text-xs font-medium">Fermeture</label>
+        <input
+          type="time"
+          value={endTime}
+          onChange={(e) => setEndTime(e.target.value)}
+          className="w-full h-11 rounded-xl border bg-background px-4 text-sm"
+        />
+      </div>
+
+      <div className="md:col-span-2 flex justify-end pt-2">
+        <Button
+          onClick={handleSave}
+          disabled={saving}
+          className="rounded-full px-6"
+        >
+          {saving ? "Enregistrement..." : "Enregistrer la localisation"}
+        </Button>
       </div>
     </div>
   );

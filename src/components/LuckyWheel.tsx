@@ -1,19 +1,25 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
-import { useCart } from "@/lib/cart-store";
+import { saveReward } from "@/lib/rewards";
+import { findCustomer } from "@/lib/customers";
+import {
+  hasPlayedToday,
+  saveSpin,
+  addCustomerPoints
+ } from "@/lib/wheel";
 
 type Prize = { label: string; color: string; weight: number };
 
 const PRIZES: Prize[] = [
-  { label: "+50 pépites", color: "#d97706", weight: 25 },
-  { label: "Bissap offert", color: "#f5f0e0", weight: 15 },
-  { label: "      Réessayez", color: "#d97706", weight: 25 },
-  { label: "-10%", color: "#f5f0e0", weight: 15 },
-  { label: "  +100 pépites", color: "#d97706", weight: 10 },
-  { label: "     -20%", color: "#f5f0e0", weight: 8 },
-  { label: "      Réessayez", color: "#d97706", weight: 1 },
-  { label: "  🥞 Crêpe offerte", color: "#f5f0e0", weight: 1 },
+  { label: "    +50 pépites", color: "#d97706", weight: 20 },
+  { label: "    Bissap offert", color: "#f5f0e0", weight: 8 },
+  { label: "      Réessayez", color: "#d97706", weight: 40 },
+  { label: "  -10%", color: "#f5f0e0", weight: 12 },
+  { label: "  +100 pépites", color: "#d97706", weight: 5 },
+  { label: "     -20%", color: "#f5f0e0", weight: 3 },
+  { label: "      Réessayez", color: "#d97706", weight: 10 },
+  { label: "    🥞 Crêpe offerte", color: "#f5f0e0", weight: 2 },
 ];
 
 const SEG = 360 / PRIZES.length;
@@ -22,8 +28,81 @@ export function LuckyWheel() {
   const [rotation, setRotation] = useState(0);
   const [spinning, setSpinning] = useState(false);
   const [used, setUsed] = useState(false);
+  const [phone, setPhone] = useState("");
+  const [customer, setCustomer] = useState<any>(null);
+  const [customerLoading, setCustomerLoading] = useState(false);
+
+  useEffect(()=>{
+
+    if(phone.length < 8){
+      setCustomer(null);
+      setUsed(false);
+      return;
+    }
+
+
+    const timer = setTimeout(()=>{
+
+      checkPreviousSpin(phone);
+
+    },500);
+
+
+    return ()=>clearTimeout(timer);
+
+
+  },[phone]);
+
+  const checkPreviousSpin = async (value:string)=>{
+
+
+    setPhone(value);
+
+
+    if(!value){
+
+      setUsed(false);
+      setCustomer(null);
+
+      return;
+
+    }
+
+    setCustomer(null);
+    setUsed(false);
+
+    setCustomerLoading(true);
+
+
+
+    const client = await findCustomer(value);
+
+
+    setCustomer(client);
+
+
+
+    if(client){
+
+      const played = await hasPlayedToday(value);
+
+      setUsed(played);
+
+    }
+    else{
+
+      setCustomer(null);
+      setUsed(false);
+
+    }
+
+
+
+    setCustomerLoading(false);
+
+  };
+
   const wheelRef = useRef<HTMLDivElement>(null);
-  const { addPoints } = useCart();
 
   const pickPrize = () => {
     const total = PRIZES.reduce((s, p) => s + p.weight, 0);
@@ -35,33 +114,149 @@ export function LuckyWheel() {
     return 0;
   };
 
-  const spin = () => {
-    if (spinning || used) return;
-    setSpinning(true);
-    const idx = pickPrize();
-    const target = 360 * 6 + (360 - (idx * SEG + SEG / 2));
-    const next = rotation + target;
-    setRotation(next);
+  const spin = async () => {
 
-    setTimeout(() => {
+    if (spinning || used || !customer) return;
+
+    const played = await hasPlayedToday(customer.phone);
+
+    if (played) {
+      toast.error("Vous avez déjà joué aujourd'hui.");
+      return;
+    }
+
+    setSpinning(true);
+
+    const idx = pickPrize();
+
+    const center = idx * SEG + SEG / 2;
+
+    const offset = (Math.random() - 0.5) * (SEG * 0.5);
+
+    const current = rotation % 360;
+
+    const target =
+      rotation +
+      360 * 6 -
+      current -
+      center +
+      offset;
+
+    setRotation(target);
+
+    setTimeout(async () => {
+
       const prize = PRIZES[idx];
-      if (prize.label.includes("pépites")) {
-        const n = parseInt(prize.label.replace(/\D/g, ""), 10);
-        addPoints(n);
+
+
+      if (
+        prize.label.includes("%") ||
+        prize.label.includes("offert")
+      ) {
+
+
+        await saveReward(
+          customer.phone,
+          prize.label
+        );
+
       }
+
+      let gainedPoints = 0;
+
+      if (prize.label.includes("pépites")) {
+        gainedPoints = parseInt(
+          prize.label.replace(/\D/g, ""),
+          10
+        );
+
+        await addCustomerPoints(
+          customer.id,
+          customer.points ?? 0,
+          gainedPoints
+         );
+
+         const updatedCustomer = await findCustomer(customer.phone);
+
+         setCustomer(updatedCustomer);
+      }
+
+      await saveSpin(
+        customer.phone,
+        prize.label,
+        gainedPoints
+      );
+
       toast.success(`🎁 ${prize.label}`, {
         description:
-          prize.label === "Réessayez"
+          prize.label.includes("Réessayez")
             ? "Pas de chance cette fois."
-            : "Récompense créditée sur votre compte.",
+            : "Récompense ajoutée à votre compte."
       });
-      setSpinning(false);
+
       setUsed(true);
+      setSpinning(false);
+
     }, 4200);
+
   };
 
   return (
     <div className="flex flex-col items-center gap-8">
+
+      <input
+        type="tel"
+        placeholder="Votre numéro de téléphone"
+        value={phone}
+        onChange={(e)=>setPhone(e.target.value)}
+        className="px-5 py-3 rounded-full border w-full max-w-sm text-center"
+      />
+
+      {
+       customerLoading && (
+        <p className="text-sm text-muted-foreground">
+          Recherche du compte...
+        </p>
+      )
+      }
+
+
+      {
+       customer && (
+
+        <div className="bg-brand-cream rounded-2xl p-4 text-center shadow">
+
+          <p className="text-lg font-bold text-brand-deep">
+            👋 Bonjour {customer.name}
+          </p>
+
+
+          <p className="text-brand-gold font-bold mt-1">
+            ✨ Solde fidélité : {customer.points ?? 0} pépites
+          </p>
+
+
+          {
+            used ? (
+
+              <p className="text-sm text-muted-foreground mt-2">
+                ⏳ Vous avez déjà joué aujourd'hui
+              </p>
+
+            ) : (
+
+              <p className="text-sm text-muted-foreground mt-2">
+                🎡 Vous pouvez tenter votre chance aujourd'hui
+              </p>
+
+            )
+          }
+
+        </div>
+
+       )
+      }
+
       <div className="relative aspect-square w-full max-w-sm">
         {/* Pointer */}
         <div className="absolute top-0 left-1/2 -translate-x-1/2 -mt-2 z-30">
@@ -87,7 +282,7 @@ export function LuckyWheel() {
               key={i}
               className="absolute top-1/2 left-1/2 origin-left text-[11px] font-bold tracking-tight"
               style={{
-                transform: `rotate(${i * SEG + SEG / 2}deg) translateX(20%)`,
+                transform: `rotate(${i * SEG + SEG / 2 - 90}deg) translateX(20%)`,
                 color: p.color === "#d97706" ? "white" : "#2d2a24",
                 width: "40%",
               }}
