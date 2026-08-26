@@ -11,6 +11,7 @@ import { useCart } from "@/lib/cart-store";
 import { formatFCFA } from "../lib/products";
 import { findCustomer } from "@/lib/customers";
 import { getRewards } from "@/lib/rewards";
+import { getLoyaltySettings } from "@/lib/loyalty";
 
 export function CartSheet({ children }: { children: React.ReactNode }) {
   const { items, setQty, remove, setNote, total, submitOrder } = useCart();
@@ -21,12 +22,12 @@ export function CartSheet({ children }: { children: React.ReactNode }) {
   const [referralCode, setReferralCode] = useState("");
   const [customer, setCustomer] = useState<any>(null);
   const [customerPoints, setCustomerPoints] = useState(0);
-  const [usePoints, setUsePoints] = useState(false);
   const [mode, setMode] = useState<"today" | "tomorrow">("today");
   const [time, setTime] = useState("12:30");
   const [submitting, setSubmitting] = useState(false);
   const [rewards, setRewards] = useState<any[]>([]);
   const [selectedReward, setSelectedReward] = useState<any>(null);
+  const [loyaltyThreshold, setLoyaltyThreshold] = useState(500);
   const searchTimeout = useRef<NodeJS.Timeout | null>(null);
 
   let rewardDiscount = 0;
@@ -70,6 +71,10 @@ export function CartSheet({ children }: { children: React.ReactNode }) {
       const rewardsData = await getRewards(phone);
 
       setRewards(rewardsData);
+
+      const loyaltySettings = await getLoyaltySettings();
+
+      setLoyaltyThreshold(loyaltySettings.threshold);
 
 
     }, 500);
@@ -124,11 +129,20 @@ export function CartSheet({ children }: { children: React.ReactNode }) {
       time,
       rewardId: selectedReward?.id,
       total: finalTotal,
-      usedPoints: pointsDiscount,
+      usedPoints: 0,
       referralCode: referralCode.trim(),
+      customerId: customer?.id,
+      loyaltyReward: selectedReward?.source === "loyalty",
     });
 
     const earned = order?.pointsEarned ?? 0;
+
+    if (
+      order &&
+      selectedReward?.source === "loyalty"
+    ) {
+      setCustomerPoints(order.pointsEarned);
+    }
 
     const referralMessage = order?.referralCode
       ? `Code ${order.referralCode} ✓ • `
@@ -145,16 +159,12 @@ export function CartSheet({ children }: { children: React.ReactNode }) {
     );
     setSubmitting(false);
     setOpen(false);
+    setSelectedReward(null);
   };
-
-  const pointsDiscount = usePoints
-    ? Math.min(customerPoints, subtotal)
-    : 0;
-
 
   const finalTotal = Math.max(
     0,
-    subtotal - rewardDiscount - pointsDiscount
+    subtotal - rewardDiscount
   );
 
   return (
@@ -271,38 +281,50 @@ export function CartSheet({ children }: { children: React.ReactNode }) {
                  </div>
 
                     {rewards.length > 0 && (
-                      <div className="space-y-2 mt-4">
+                      <div className="space-y-3 mt-4">
+
+                        {rewards.some((reward) => reward.source === "loyalty") && (
+                          <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3">
+                            <p className="text-sm font-semibold text-emerald-700">
+                              🎉 Votre réduction fidélité est disponible !
+                            </p>
+
+                            <p className="text-xs text-emerald-600 mt-1">
+                              Utilisez-la pour bénéficier de votre remise et réinitialiser vos
+                              pépites afin de recommencer un nouveau cycle.
+                            </p>
+                          </div>
+                        )}
 
                         <p className="text-xs font-bold uppercase tracking-widest text-brand-gold">
                           Vos récompenses disponibles
                         </p>
 
-                    {rewards.map((reward)=>(
-                      <button
-                      key={reward.id}
-                      type="button"
-                      onClick={() =>
-                        setSelectedReward(
-                          selectedReward?.id === reward.id
-                            ? null
-                            : reward
-                        )
-                      }
-                      className={
-                        "w-full rounded-xl border p-3 text-left text-sm transition " +
-                        (
-                          selectedReward?.id === reward.id
-                          ? "border-brand-gold bg-brand-gold/10"
-                          : "border-border"
-                        )
-                    }
-                  >
-                    🎁 {reward.value}
-                      </button>
-                  ))}
-
-                </div>
-              )}
+                        {rewards.map((reward) => (
+                          <button
+                            key={reward.id}
+                            type="button"
+                            onClick={() =>
+                              setSelectedReward(
+                              selectedReward?.id === reward.id
+                                ? null
+                                : reward
+                              )
+                            }
+                            className={
+                              "w-full rounded-xl border p-3 text-left text-sm transition " +
+                              (
+                                selectedReward?.id === reward.id
+                                  ? "border-brand-gold bg-brand-gold/10"
+                                  : "border-border"
+                              )
+                            }
+                          >
+                            🎁 {reward.value}
+                          </button>
+                        ))}
+                      </div>
+                    )}
 
                     {customer && (
 
@@ -356,23 +378,6 @@ export function CartSheet({ children }: { children: React.ReactNode }) {
         {items.length > 0 && (
           <div className="border-t p-6 space-y-3 bg-secondary/50">
 
-          {customer && customerPoints > 0 && (
-
-            <label className="flex items-center justify-between rounded-xl border p-3 cursor-pointer">
-
-              <span>
-                Utiliser mes pépites
-              </span>
-
-              <input
-                type="checkbox"
-                checked={usePoints}
-                onChange={(e) => setUsePoints(e.target.checked)}
-              />
-
-            </label>
-
-          )}
             <div className="flex justify-between items-baseline">
               <span className="text-sm text-muted-foreground">Total (paiement à la livraison)</span>
               <div className="text-right">
@@ -395,17 +400,15 @@ export function CartSheet({ children }: { children: React.ReactNode }) {
 
             </div>
 
-            {pointsDiscount > 0 && (
-
-            <p className="text-sm text-green-600">
-              Réduction fidélité :
-              - {formatFCFA(pointsDiscount)}
-            </p>
-
-            )}
 
             <p className="text-xs text-brand-gold font-medium">
-              +{Math.floor(total / 100)} pépites de fidélité offertes
+              +{Math.max(
+                0,
+                Math.min(
+                  loyaltyThreshold - customerPoints,
+                  Math.floor(finalTotal / 100)
+                )
+              )} pépites de fidélité
             </p>
             <Button
               disabled={submitting}

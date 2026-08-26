@@ -2,7 +2,8 @@ import { supabase } from "./supabase";
 
 export async function saveReward(
   phone: string,
-  reward: string
+  reward: string,
+  source: "wheel" | "loyalty" | "referral" = "wheel"
 ) {
   const type =
     reward.includes("%")
@@ -15,6 +16,7 @@ export async function saveReward(
       customer_phone: phone,
       type,
       value: reward,
+      source,
     });
 
   if (error) {
@@ -49,4 +51,22 @@ export async function useReward(
       order_id: orderId,
     })
     .eq("id", id);
+}
+
+export async function hasActiveLoyaltyReward(phone: string) {
+  const { data, error } = await supabase
+    .from("customer_rewards")
+    .select("id")
+    .eq("customer_phone", phone)
+    .eq("source", "loyalty")
+    .eq("used", false)
+    .limit(1)
+    .maybeSingle();
+
+  if (error) {
+    console.error("CHECK LOYALTY REWARD :", error);
+    return false;
+  }
+
+  return !!data;
 }

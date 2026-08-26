@@ -10,6 +10,7 @@ import {
 import type { Product } from "./products";
 import { createOrder } from "./orders";
 import { useReward } from "./rewards";
+import { updateCustomerPoints } from "./customers";
 
 export type CartItem = { product: Product; qty: number; note?: string };
 
@@ -46,6 +47,8 @@ type SubmitInput = {
   usedPoints?: number;
   rewardId?: number;
   referralCode?: string;
+  customerId?: number;
+  loyaltyReward?: boolean;
 };
 
 type CartContextValue = {
@@ -183,12 +186,39 @@ export function CartProvider({ children }: { children: ReactNode }) {
         order.referralCode = createdOrder.acceptedReferralCode;
       }
 
-      // Consommation des récompenses utilisées
+      // Consommation de la récompense utilisée
       if (input.rewardId) {
-        await useReward(
+        const rewardResult = await useReward(
           input.rewardId,
           createdOrder.data.id
         );
+
+        if (rewardResult.error) {
+          console.error(
+            "Erreur consommation récompense :",
+            rewardResult.error
+          );
+        }
+
+        // Une récompense fidélité termine le cycle :
+        // on repart avec uniquement les pépites gagnées par cette commande.
+        if (
+          !rewardResult.error &&
+          input.loyaltyReward &&
+          input.customerId
+        ) {
+          const resetResult = await updateCustomerPoints(
+            input.customerId,
+            Math.min(500, order.pointsEarned)
+          );
+
+          if (resetResult.error) {
+            console.error(
+              "Erreur réinitialisation pépites :",
+              resetResult.error
+            );
+          }
+        }
       }
 
       setOrders((os) => [order, ...os]);

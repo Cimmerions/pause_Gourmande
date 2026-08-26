@@ -3,6 +3,7 @@ import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import { saveReward } from "@/lib/rewards";
 import { findCustomer } from "@/lib/customers";
+import { getAppSettings } from "@/lib/settings";
 import {
   hasPlayedToday,
   saveSpin,
@@ -11,18 +12,14 @@ import {
 
 type Prize = { label: string; color: string; weight: number };
 
-const PRIZES: Prize[] = [
-  { label: "    +50 pépites", color: "#d97706", weight: 20 },
-  { label: "    Bissap offert", color: "#f5f0e0", weight: 8 },
-  { label: "      Réessayez", color: "#d97706", weight: 40 },
-  { label: "  -10%", color: "#f5f0e0", weight: 12 },
-  { label: "  +100 pépites", color: "#d97706", weight: 5 },
-  { label: "     -20%", color: "#f5f0e0", weight: 3 },
-  { label: "      Réessayez", color: "#d97706", weight: 10 },
-  { label: "    🥞 Crêpe offerte", color: "#f5f0e0", weight: 2 },
+const DEFAULT_PRIZES: Prize[] = [
+  { label: "  +50 pépites", color: "#d97706", weight: 14 },
+  { label: "    🥞 Crêpe offerte", color: "#f5f0e0", weight: 2 },
+  { label: "      Réessayez", color: "#d97706", weight: 50 },
+  { label: "  -10%", color: "#f5f0e0", weight: 8 },
+  { label: "  +100 pépites", color: "#d97706", weight: 8 },
+  { label: "    Oops!", color: "#f5f0e0", weight: 18 },
 ];
-
-const SEG = 360 / PRIZES.length;
 
 export function LuckyWheel() {
   const [rotation, setRotation] = useState(0);
@@ -31,6 +28,7 @@ export function LuckyWheel() {
   const [phone, setPhone] = useState("");
   const [customer, setCustomer] = useState<any>(null);
   const [customerLoading, setCustomerLoading] = useState(false);
+  const [prizes, setPrizes] = useState<Prize[]>(DEFAULT_PRIZES);
 
   useEffect(()=>{
 
@@ -52,6 +50,26 @@ export function LuckyWheel() {
 
 
   },[phone]);
+
+  useEffect(() => {
+    async function loadWheelSettings() {
+      const settings = await getAppSettings();
+  
+      if (!settings?.wheel_prizes?.length) {
+        return;
+      }
+  
+      setPrizes((current) =>
+        settings.wheel_prizes.map((item, index) => ({
+          label: item.label,
+          weight: item.weight,
+          color: current[index]?.color ?? "#f5f0e0",
+        }))
+      );
+    }
+  
+    loadWheelSettings();
+  }, []);
 
   const checkPreviousSpin = async (value:string)=>{
 
@@ -105,18 +123,33 @@ export function LuckyWheel() {
   const wheelRef = useRef<HTMLDivElement>(null);
 
   const pickPrize = () => {
-    const total = PRIZES.reduce((s, p) => s + p.weight, 0);
+    const total = prizes.reduce((s, p) => s + p.weight, 0);
+  
     let r = Math.random() * total;
-    for (let i = 0; i < PRIZES.length; i++) {
-      r -= PRIZES[i].weight;
-      if (r <= 0) return i;
+  
+    for (let i = 0; i < prizes.length; i++) {
+      r -= prizes[i].weight;
+  
+      if (r <= 0) {
+        return i;
+      }
     }
+  
     return 0;
   };
 
   const spin = async () => {
-
-    if (spinning || used || !customer) return;
+    if (spinning || used) return;
+  
+    if (!phone.trim()) {
+      toast.error("Entrez votre numéro de téléphone avant de lancer la roue.");
+      return;
+    }
+  
+    if (!customer) {
+      toast.error("Aucun compte client trouvé pour ce numéro.");
+      return;
+    }
 
     const played = await hasPlayedToday(customer.phone);
 
@@ -128,6 +161,8 @@ export function LuckyWheel() {
     setSpinning(true);
 
     const idx = pickPrize();
+
+    const SEG = 360 / prizes.length;
 
     const center = idx * SEG + SEG / 2;
 
@@ -146,7 +181,7 @@ export function LuckyWheel() {
 
     setTimeout(async () => {
 
-      const prize = PRIZES[idx];
+      const prize = prizes[idx];
 
 
       if (
@@ -171,8 +206,7 @@ export function LuckyWheel() {
         );
 
         await addCustomerPoints(
-          customer.id,
-          customer.points ?? 0,
+          customer.phone,
           gainedPoints
          );
 
@@ -272,24 +306,33 @@ export function LuckyWheel() {
             transition: spinning
               ? "transform 4s cubic-bezier(0.17, 0.67, 0.12, 0.99)"
               : "none",
-            background: `conic-gradient(${PRIZES.map(
-              (p, i) => `${p.color} ${i * SEG}deg ${(i + 1) * SEG}deg`,
-            ).join(", ")})`,
+              background: `conic-gradient(${prizes.map(
+                (p, i) => {
+                  const segment = 360 / prizes.length;
+              
+                  return `${p.color} ${i * segment}deg ${(i + 1) * segment}deg`;
+                }
+              ).join(", ")})`,
           }}
         >
-          {PRIZES.map((p, i) => (
-            <div
-              key={i}
-              className="absolute top-1/2 left-1/2 origin-left text-[11px] font-bold tracking-tight"
-              style={{
-                transform: `rotate(${i * SEG + SEG / 2 - 90}deg) translateX(20%)`,
-                color: p.color === "#d97706" ? "white" : "#2d2a24",
-                width: "40%",
-              }}
-            >
-              <span className="block px-2">{p.label}</span>
-            </div>
-          ))}
+          {prizes.map((p, i) => {
+            const SEG = 360 / prizes.length;
+
+            return (
+              <div
+                key={i}
+                className="absolute top-1/2 left-1/2 origin-left text-[11px] font-bold tracking-tight"
+                style={{
+                  transform: `rotate(${i * SEG + SEG / 2 - 90}deg) translateX(25%)`,
+                  color: p.color === "#d97706" ? "white" : "#2d2a24",
+                  width: "40%",
+                  textAlign: "center",
+                }}
+              >
+                <span className="block px-2">{p.label}</span>
+              </div>
+            );
+          })}  
         </div>
 
         {/* Center */}

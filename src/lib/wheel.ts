@@ -1,4 +1,6 @@
 import { supabase } from "./supabase";
+import { findCustomer } from "./customers";
+import { getLoyaltySettings } from "./loyalty";
 
 
 export async function saveSpin(
@@ -20,18 +22,47 @@ export async function saveSpin(
 
 
 export async function addCustomerPoints(
-  id: number,
-  currentPoints: number,
+  phone: string,
   points: number
-){
+) {
+  const customer = await findCustomer(phone);
 
-  return await supabase
+  if (!customer) return;
+
+  const loyaltySettings = await getLoyaltySettings();
+
+  const currentPoints = customer.points ?? 0;
+
+  const newBalance = Math.min(
+    loyaltySettings.threshold,
+    currentPoints + Math.max(0, points)
+  );
+
+  await supabase
     .from("customers")
     .update({
-      points: currentPoints + points
+      points: newBalance,
     })
-    .eq("id", id);
+    .eq("id", customer.id);
 
+    if (
+      currentPoints < loyaltySettings.threshold &&
+      newBalance === loyaltySettings.threshold
+    ) {
+    const { hasActiveLoyaltyReward, saveReward } =
+      await import("./rewards");
+
+    const alreadyHasReward =
+      await hasActiveLoyaltyReward(customer.phone);
+
+    if (!alreadyHasReward) {
+      await saveReward(
+        customer.phone,
+        loyaltySettings.reward,
+        "loyalty"
+      );
+    }
+  }
 }
 
 export async function hasPlayedToday(phone:string){

@@ -1,5 +1,5 @@
 import { useMemo, useState, useEffect} from "react";
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, ClientOnly } from "@tanstack/react-router";
 import { Search, ShoppingCart, Heart, Sparkles, Copy, MapPin, Clock, LayoutDashboard } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -11,7 +11,8 @@ import { LuckyWheel } from "@/components/LuckyWheel";
 import { CartSheet } from "@/components/CartSheet";
 import { findCustomer } from "@/lib/customers";
 import { getActiveLocation, type Location } from "@/lib/locations";
-import { LocationMap } from "@/components/LocationMap";
+import { LocationMap } from "@/components/LocationMap.client";
+import { getLoyaltySettings } from "@/lib/loyalty";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -43,6 +44,8 @@ function Home() {
   const [query, setQuery] = useState("");
   const [cat, setCat] = useState<(typeof CATEGORIES)[number]>("Tout");
   const [location, setLocation] = useState<Location | null>(null);
+  const [nextRewardAt, setNextRewardAt] = useState(500);
+  const [loyaltyReward, setLoyaltyReward] = useState("-10%");
 
   useEffect(() => {
     async function loadHomeData() {
@@ -51,8 +54,12 @@ function Home() {
         getActiveLocation(),
       ]);
 
+      const loyaltySettings = await getLoyaltySettings();
+
       setProducts(productsData);
       setLocation(locationData);
+      setNextRewardAt(loyaltySettings.threshold);
+      setLoyaltyReward(loyaltySettings.reward);
     }
 
     loadHomeData();
@@ -91,7 +98,6 @@ function Home() {
     );
   }, [products, query, cat]);
 
-  const nextRewardAt = 1000;
   const progress = Math.min(100, Math.round((points / nextRewardAt) * 100));
 
   const copyReferral = () => {
@@ -288,8 +294,7 @@ function Home() {
               Une surprise sucrée à chaque tour de roue.
             </h2>
             <p className="text-brand-cream/70 text-lg text-pretty max-w-[45ch] mb-8 leading-relaxed">
-              Ne repartez jamais les mains vides. Tentez votre chance pour gagner un supplément
-              gratuit, une réduction, des pépites de fidélité — ou, avec un peu de chance, une
+              Tentez votre chance pour gagner une réduction, des pépites de fidélité — ou, avec un peu de chance, une
               crêpe offerte.
             </p>
             <ul className="space-y-2 text-sm text-brand-cream/80">
@@ -357,7 +362,7 @@ function Home() {
                       <p className="text-3xl font-semibold">{points}</p>
                     </div>
                   </div>
-                  <span className="text-xs text-muted-foreground">100 F = 1 pépite</span>
+  
                 </div>
                 <div className="w-full h-2 bg-brand-gold/10 rounded-full overflow-hidden">
                   <div
@@ -366,9 +371,28 @@ function Home() {
                   />
                 </div>
                 <p className="text-[11px] font-medium text-muted-foreground mt-3">
-                  {points >= nextRewardAt
-                    ? "🎉 Une crêpe offerte vous attend à votre prochaine commande !"
-                    : `Plus que ${nextRewardAt - points} pépites pour votre prochaine crêpe offerte.`}
+                  {points >= nextRewardAt ? (
+                    <>
+                      🎉 Vous avez débloqué une réduction de{" "}
+                      <span className="font-bold text-brand-gold">
+                        {loyaltyReward}
+                      </span>
+                        . Utilisez-la à votre prochaine commande pour réinitialiser vos
+                        pépites et recommencer un nouveau cycle.
+                    </>
+                  ) : (
+                    <>
+                      Plus que{" "}
+                      <span className="font-bold">
+                        {nextRewardAt - points}
+                      </span>{" "}
+                      pépites pour débloquer votre réduction de{" "}
+                      <span className="font-bold text-brand-gold">
+                        {loyaltyReward}
+                      </span>
+                      .
+                    </>
+                  )}
                 </p>
               </div>
             </div>
@@ -457,12 +481,23 @@ function Home() {
 
             <div className="aspect-[4/3] rounded-3xl overflow-hidden ring-1 ring-border relative">
               {location?.latitude != null && location?.longitude != null ? (
-                <LocationMap
-                  latitude={location.latitude}
-                  longitude={location.longitude}
-                  name={location.name}
-                  address={location.address}
-                />
+                <ClientOnly
+                  fallback={
+                    <div className="h-full flex items-center justify-center bg-brand-warm">
+                      <div className="text-center text-muted-foreground">
+                        <MapPin className="size-12 mx-auto mb-3 text-brand-gold/50" />
+                        <p>Chargement de la carte...</p>
+                      </div>
+                    </div>
+                  }
+                >
+                  <LocationMap
+                    latitude={location.latitude}
+                    longitude={location.longitude}
+                    name={location.name}
+                    address={location.address}
+                  />
+                </ClientOnly>
               ) : (
                 <div className="h-full flex items-center justify-center bg-brand-warm">
                   <div className="text-center text-muted-foreground">

@@ -25,6 +25,13 @@ import {
   type Location,
 } from "@/lib/locations";
 
+import {
+  getAppSettings,
+  updateAppSettings,
+  type AppSettings,
+  type WheelSetting,
+} from "@/lib/settings";
+
 export const Route = createFileRoute("/dashboard")({
   head: () => ({
     meta: [
@@ -64,6 +71,8 @@ function Dashboard() {
   const [checkingAuth, setCheckingAuth] = useState(true);
   const [location, setLocation] = useState<Location | null>(null);
   const [savingLocation, setSavingLocation] = useState(false);
+  const [settings, setSettings] = useState<AppSettings | null>(null);
+  const [savingSettings, setSavingSettings] = useState(false);
 
   async function loadData() {
 
@@ -72,9 +81,11 @@ function Dashboard() {
     const productsData = await getProducts();
     const ordersData = await getOrders();
     const locationData = await getLocation();
+    const settingsData = await getAppSettings();
 
     setProducts(productsData);
     setLocation(locationData);
+    setSettings(settingsData);
 
     setOrders(
       ordersData.map((order: any) => ({
@@ -374,6 +385,40 @@ function Dashboard() {
             hint={`Solde client : ${points}`}
           />
         </section>
+
+        {/* Paramètres */}
+        {settings && (
+          <section className="bg-card rounded-[28px] p-6 ring-1 ring-border">
+            <div className="mb-6">
+              <h2 className="text-lg font-semibold">
+                Paramètres de l'application
+              </h2>
+
+              <p className="text-xs text-muted-foreground mt-1">
+                Contrôlez les règles de fidélité et les probabilités de la roue.
+              </p>
+            </div>
+
+            <SettingsEditor
+              settings={settings}
+              saving={savingSettings}
+              onSave={async (values) => {
+                setSavingSettings(true);
+
+                const updated = await updateAppSettings(values);
+
+                if (updated) {
+                  setSettings(updated);
+                  toast.success("Paramètres mis à jour.");
+                } else {
+                  toast.error("Impossible de mettre à jour les paramètres.");
+                }
+
+                setSavingSettings(false);
+              }}
+            />
+          </section>
+        )}
 
         {/* Chart + product perf */}
         <section className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -783,6 +828,200 @@ function LocationEditor({
           className="rounded-full px-6"
         >
           {saving ? "Enregistrement..." : "Enregistrer la localisation"}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+function SettingsEditor({
+  settings,
+  saving,
+  onSave,
+}: {
+  settings: AppSettings;
+  saving: boolean;
+  onSave: (values: {
+    loyalty_threshold: number;
+    loyalty_reward: string;
+    wheel_prizes: WheelSetting[];
+  }) => Promise<void>;
+}) {
+  const [threshold, setThreshold] = useState(
+    settings.loyalty_threshold
+  );
+
+  const [reward, setReward] = useState(
+    settings.loyalty_reward
+  );
+
+  const [prizes, setPrizes] = useState<WheelSetting[]>(
+    settings.wheel_prizes
+  );
+
+  const totalWeight = prizes.reduce(
+    (sum, prize) => sum + Number(prize.weight),
+    0
+  );
+
+  function updatePrizeWeight(
+    index: number,
+    weight: number
+  ) {
+    setPrizes((current) =>
+      current.map((prize, i) =>
+        i === index
+          ? { ...prize, weight }
+          : prize
+      )
+    );
+  }
+
+  async function handleSave() {
+    const cleanThreshold = Math.floor(Number(threshold));
+
+    if (!Number.isFinite(cleanThreshold) || cleanThreshold <= 0) {
+      toast.error("Le seuil de fidélité doit être un nombre positif.");
+      return;
+    }
+
+    if (totalWeight !== 100) {
+      toast.error(
+        `Les probabilités doivent totaliser 100 %. Actuellement : ${totalWeight} %.`
+      );
+      return;
+    }
+
+    if (prizes.some((prize) => prize.weight < 0)) {
+      toast.error("Une probabilité ne peut pas être négative.");
+      return;
+    }
+
+    await onSave({
+      loyalty_threshold: cleanThreshold,
+      loyalty_reward: reward,
+      wheel_prizes: prizes.map((prize) => ({
+        label: prize.label,
+        weight: Number(prize.weight),
+      })),
+    });
+  }
+
+  return (
+    <div className="space-y-8">
+      {/* Fidélité */}
+      <div>
+        <div className="mb-4">
+          <h3 className="font-semibold">Fidélité</h3>
+          <p className="text-xs text-muted-foreground">
+            Définissez le nombre de pépites nécessaire pour débloquer
+            une récompense.
+          </p>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className="space-y-1">
+            <label className="text-xs font-medium">
+              Seuil de récompense
+            </label>
+
+            <input
+              type="number"
+              min="1"
+              value={threshold}
+              onChange={(e) =>
+                setThreshold(Number(e.target.value))
+              }
+              className="w-full h-11 rounded-xl border bg-background px-4 text-sm"
+            />
+          </div>
+
+          <div className="space-y-1">
+            <label className="text-xs font-medium">
+              Réduction fidélité (%)
+            </label>
+
+            <input
+              type="number"
+              min="1"
+              max="100"
+              value={reward.replace("%", "").replace("-", "")}
+              onChange={(e) => {
+                const value = Math.max(
+                 1,
+                 Math.min(100, Number(e.target.value))
+                );
+ 
+                setReward(`-${value}%`);
+              }}
+              className="w-full h-11 rounded-xl border bg-background px-4 text-sm"
+            />
+          </div>
+        </div>
+      </div>
+
+      {/* Roue */}
+      <div>
+        <div className="mb-4">
+          <h3 className="font-semibold">Roue de la chance</h3>
+          <p className="text-xs text-muted-foreground">
+            Les poids déterminent les probabilités relatives de chaque
+            case.
+          </p>
+        </div>
+
+        <div className="space-y-3">
+          {prizes.map((prize, index) => (
+            <div
+              key={`${prize.label}-${index}`}
+              className="flex items-center gap-3"
+            >
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium truncate">
+                  {prize.label.trim()}
+                </p>
+              </div>
+
+              <input
+                type="number"
+                min="0"
+                max="100"
+                value={prize.weight}
+                onChange={(e) =>
+                  updatePrizeWeight(
+                    index,
+                    Number(e.target.value)
+                  )
+                }
+                className="w-20 h-10 rounded-xl border bg-background px-3 text-sm text-center"
+              />
+
+              <span className="text-xs text-muted-foreground w-6">
+                %
+              </span>
+            </div>
+          ))}
+        </div>
+
+        <div
+          className={
+            "mt-4 rounded-xl p-3 text-sm font-medium " +
+            (totalWeight === 100
+              ? "bg-emerald-50 text-emerald-700"
+              : "bg-amber-50 text-amber-700")
+          }
+        >
+          Total des probabilités : {totalWeight} %
+        </div>
+      </div>
+
+      <div className="flex justify-end">
+        <Button
+          onClick={handleSave}
+          disabled={saving || totalWeight !== 100}
+          className="rounded-full px-6"
+        >
+          {saving ? "Enregistrement..." : "Enregistrer les paramètres"}
         </Button>
       </div>
     </div>

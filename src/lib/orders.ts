@@ -1,5 +1,6 @@
 import { supabase } from "./supabase";
 import type { Order } from "./cart-store";
+
 import {
   findCustomer,
   createCustomer,
@@ -7,14 +8,22 @@ import {
   findCustomerByReferralCode,
 } from "./customers";
 
-import { saveReward } from "./rewards";
+import {
+  saveReward,
+  hasActiveLoyaltyReward,
+} from "./rewards";
+
+import {
+  capLoyaltyPoints,
+  getLoyaltySettings,
+} from "./loyalty";
 
 export async function createOrder(
   order: Order,
   referralCode?: string
 ) {
-
   try {
+    const loyaltySettings = await getLoyaltySettings();
 
     let acceptedReferralCode: string | null = null;
 
@@ -31,12 +40,10 @@ export async function createOrder(
       .select()
       .single();
 
-
     if (error) {
       console.error("Erreur création commande :", error);
       return null;
     }
-
 
     const items = order.lines.map((item) => ({
       order_id: data.id,
@@ -47,95 +54,105 @@ export async function createOrder(
       note: item.note ?? null,
     }));
 
-
     const { error: itemError } = await supabase
-  .from("order_items")
-  .insert(items);
+      .from("order_items")
+      .insert(items);
 
-if (itemError) {
-  console.error("Erreur lignes commande :", itemError);
-  return null;
-}
-
-// Gestion de la fidélité
-let customer = await findCustomer(order.phone);
-
-if (!customer) {
-  let referredBy: number | undefined = undefined;
-  let referrer = null;
-
-  // Vérification du code de parrainage
-  if (referralCode?.trim()) {
-    referrer = await findCustomerByReferralCode(
-      referralCode.trim().toUpperCase()
-    );
-
-    // Empêcher l'auto-parrainage
-    if (referrer && referrer.phone !== order.phone) {
-      referredBy = referrer.id;
-      acceptedReferralCode = referralCode.trim().toUpperCase();
-    } else {
-      referrer = null;
+    if (itemError) {
+      console.error("Erreur lignes commande :", itemError);
+      return null;
     }
-  }
 
-  // Création du nouveau client
-  customer = await createCustomer(
-    order.customerName,
-    order.phone,
-    referredBy
-  );
+    // Recherche du client
+    let customer = await findCustomer(order.phone);
 
-  // Attribution des récompenses de parrainage
-  if (customer && referrer) {
-    // Récompense du parrain
-    await saveReward(
-      referrer.phone,
-      "Garniture premium offerte"
-    );
+    // Création du compte si nécessaire
+    if (!customer) {
+      let referredBy: number | undefined = undefined;
+      let referrer = null;
 
-    // Récompense du filleul
-    await saveReward(
-      customer.phone,
-      "Garniture premium offerte"
-    );
+      if (referralCode?.trim()) {
+        referrer = await findCustomerByReferralCode(
+          referralCode.trim().toUpperCase()
+        );
 
-    console.log("PARRAINAGE VALIDÉ :", {
-      parrain: referrer.phone,
-      filleul: customer.phone,
-    });
-  }
-}
+        if (referrer && referrer.phone !== order.phone) {
+          referredBy = referrer.id;
+          acceptedReferralCode = referralCode.trim().toUpperCase();
+        } else {
+          referrer = null;
+        }
+      }
 
-if (customer) {
+      customer = await createCustomer(
+        order.customerName,
+        order.phone,
+        referredBy
+      );
 
-  const earnedPoints = order.pointsEarned;
+      // Récompenses de parrainage
+      if (customer && referrer) {
+        await saveReward(
+          referrer.phone,
+          "Garniture premium offerte",
+          "referral"
+        );
 
-  const usedPoints = order.usedPoints ?? 0;
+        await saveReward(
+          customer.phone,
+          "Garniture premium offerte",
+          "referral"
+        );
 
-  const newBalance = Math.max(
-    0,
-    customer.points - usedPoints + earnedPoints
-  );
+        console.log("PARRAINAGE VALIDÉ :", {
+          parrain: referrer.phone,
+          filleul: customer.phone,
+        });
+      }
+    }
 
-  await updateCustomerPoints(
-    customer.id,
-    newBalance
-  );
+    // Fidélité
+    if (customer) {
+      const earnedPoints = order.pointsEarned;
+      const currentPoints = customer.points ?? 0;
 
-}
+      const newBalance = capLoyaltyPoints(
+        currentPoints,
+        earnedPoints,
+        loyaltySettings.threshold
+      );
 
-return {
-  data,
-  acceptedReferralCode,
-};
+      await updateCustomerPoints(
+        customer.id,
+        newBalance
+      );
 
+      // Débloque une récompense lorsque le seuil est atteint
+      if (
+        currentPoints < loyaltySettings.threshold &&
+        newBalance === loyaltySettings.threshold
+      ) {
+        const alreadyHasReward =
+          await hasActiveLoyaltyReward(customer.phone);
+
+        if (!alreadyHasReward) {
+          await saveReward(
+            customer.phone,
+            loyaltySettings.reward,
+            "loyalty"
+          );
+        }
+      }
+    }
+
+    return {
+      data,
+      acceptedReferralCode,
+    };
 
   } catch (error) {
-
     console.error("Erreur inattendue :", error);
     return null;
-
   }
 }
 
@@ -271,4 +288,4 @@ export async function getOrders() {
       .delete()
       .eq("id", id);
   
-  }
+  }  
