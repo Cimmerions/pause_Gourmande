@@ -1,5 +1,59 @@
 import { supabase } from "./supabase";
 
+export type ReferralSurprise = {
+  label: string;
+  weight: number;
+};
+
+export async function pickReferralSurprise(): Promise<string | null> {
+  const { data, error } = await supabase
+    .from("app_settings")
+    .select("referral_surprises")
+    .eq("id", 1)
+    .maybeSingle();
+
+  if (error) {
+    console.error(
+      "Erreur récupération surprises de parrainage :",
+      error
+    );
+
+    return null;
+  }
+
+  const surprises = (data?.referral_surprises ?? []) as ReferralSurprise[];
+
+  if (surprises.length === 0) {
+    console.error("Aucune surprise de parrainage configurée.");
+    return null;
+  }
+
+  const totalWeight = surprises.reduce(
+    (sum, reward) => sum + Number(reward.weight),
+    0
+  );
+
+  if (totalWeight <= 0) {
+    console.error(
+      "Les probabilités des surprises de parrainage sont invalides."
+    );
+
+    return null;
+  }
+
+  let random = Math.random() * totalWeight;
+
+  for (const reward of surprises) {
+    random -= Number(reward.weight);
+
+    if (random <= 0) {
+      return reward.label;
+    }
+  }
+
+  return surprises[0].label;
+}
+
 export async function saveReward(
   phone: string,
   reward: string,
@@ -10,18 +64,23 @@ export async function saveReward(
       ? "discount"
       : "product";
 
-  const { error } = await supabase
+  const { data, error } = await supabase
     .from("customer_rewards")
     .insert({
       customer_phone: phone,
       type,
       value: reward,
       source,
-    });
+    })
+    .select()
+    .single();
 
   if (error) {
     console.error("SAVE REWARD :", error);
+    return null;
   }
+
+  return data;
 }
 
 export async function getRewards(phone: string) {

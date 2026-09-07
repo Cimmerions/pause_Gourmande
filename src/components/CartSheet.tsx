@@ -145,7 +145,7 @@ export function CartSheet({ children }: { children: React.ReactNode }) {
     }
 
     const referralMessage = order?.referralCode
-      ? `Code ${order.referralCode} ✓ • `
+      ? `🎉 Commande confirmée ! Le parrainage a bien été pris en compte.`
       : "";
 
     toast.success(

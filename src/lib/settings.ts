@@ -5,11 +5,21 @@ export type WheelSetting = {
   weight: number;
 };
 
+export type ReferralSurpriseSetting = {
+  label: string;
+  weight: number;
+};
+
 export type AppSettings = {
   id: number;
+
   loyalty_threshold: number;
   loyalty_reward: string;
+
   wheel_prizes: WheelSetting[];
+
+  referral_surprises: ReferralSurpriseSetting[];
+
   updated_at: string;
 };
 
@@ -32,6 +42,7 @@ export async function updateAppSettings(values: {
   loyalty_threshold: number;
   loyalty_reward: string;
   wheel_prizes: WheelSetting[];
+  referral_surprises: ReferralSurpriseSetting[];
 }) {
   const { data, error } = await supabase
     .from("app_settings")

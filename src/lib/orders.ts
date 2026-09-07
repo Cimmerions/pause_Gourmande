@@ -11,12 +11,17 @@ import {
 import {
   saveReward,
   hasActiveLoyaltyReward,
+  pickReferralSurprise,
 } from "./rewards";
 
 import {
   capLoyaltyPoints,
   getLoyaltySettings,
 } from "./loyalty";
+
+import {
+  createNotification,
+} from "./notifications";
 
 export async function createOrder(
   order: Order,
@@ -90,24 +95,28 @@ export async function createOrder(
         referredBy
       );
 
-      // Récompenses de parrainage
-      if (customer && referrer) {
-        await saveReward(
-          referrer.phone,
-          "Garniture premium offerte",
-          "referral"
-        );
+      // Récompense de parrainage
+      // Seul le parrain reçoit une surprise.
+        if (customer && referrer) {
+        const surprise = await pickReferralSurprise();
 
-        await saveReward(
-          customer.phone,
-          "Garniture premium offerte",
-          "referral"
-        );
+        if (!surprise) {
+          console.error(
+            "Impossible d'attribuer la surprise de parrainage."
+          );
+        } else {
+          await saveReward(
+            referrer.phone,
+            surprise,
+            "referral"
+          );
 
-        console.log("PARRAINAGE VALIDÉ :", {
-          parrain: referrer.phone,
-          filleul: customer.phone,
-        });
+          console.log("PARRAINAGE VALIDÉ :", {
+            parrain: referrer.phone,
+            filleul: customer.phone,
+            surprise,
+          });
+        }
       }
     }
 
@@ -237,9 +246,7 @@ export async function getOrders() {
       .eq("id", id)
       .select()
       .single();
-  
-  
-  
+
     return { data, error };
   }
 
@@ -289,3 +296,26 @@ export async function getOrders() {
       .eq("id", id);
   
   }  
+  
+  export function subscribeToNotifications(
+    onNotification: (notification: Notification) => void
+  ) {
+    const channel = supabase
+      .channel("notifications-realtime")
+      .on(
+        "postgres_changes",
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "notifications",
+        },
+        (payload) => {
+          onNotification(payload.new as Notification);
+        }
+      )
+      .subscribe();
+  
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }

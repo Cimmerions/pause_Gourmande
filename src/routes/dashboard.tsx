@@ -3,6 +3,7 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { supabase } from "@/lib/supabase";
 import { toast } from "sonner";
 import { Switch } from "@/components/ui/switch";
+import { NotificationBell } from "@/components/NotificationBell";
 import {
   ArrowLeft,
   TrendingUp,
@@ -20,6 +21,12 @@ import { useCart, type Order } from "@/lib/cart-store";
 import { getProducts, formatFCFA, type Product } from "@/lib/products";
 import { getOrders, updateOrderStatus } from "@/lib/orders";
 import {
+  getNotifications,
+  getUnreadNotificationCount,
+  subscribeToNotifications,
+  type Notification,
+} from "@/lib/notifications";
+import {
   getLocation,
   updateLocation,
   type Location,
@@ -30,6 +37,7 @@ import {
   updateAppSettings,
   type AppSettings,
   type WheelSetting,
+  type ReferralSurpriseSetting,
 } from "@/lib/settings";
 
 export const Route = createFileRoute("/dashboard")({
@@ -73,6 +81,8 @@ function Dashboard() {
   const [savingLocation, setSavingLocation] = useState(false);
   const [settings, setSettings] = useState<AppSettings | null>(null);
   const [savingSettings, setSavingSettings] = useState(false);
+  const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [unreadNotifications, setUnreadNotifications] = useState(0);
 
   async function loadData() {
 
@@ -113,6 +123,48 @@ function Dashboard() {
 
     loadData();
 
+  }, []);
+
+  useEffect(() => {
+    async function loadNotifications() {
+      const [notificationsData, unreadCount] = await Promise.all([
+        getNotifications(30),
+        getUnreadNotificationCount(),
+      ]);
+  
+      setNotifications(notificationsData);
+      setUnreadNotifications(unreadCount);
+    }
+  
+    loadNotifications();
+  }, []);
+
+  useEffect(() => {
+    const unsubscribe = subscribeToNotifications((notification) => {
+      setNotifications((current) => [
+        notification,
+        ...current.filter((item) => item.id !== notification.id),
+      ]);
+  
+      if (!notification.read) {
+        setUnreadNotifications((count) => count + 1);
+      }
+
+      const audio = new Audio("/sounds/notification.mp3");
+
+      audio.play().catch((error) => {
+        console.warn(
+          "Impossible de jouer le son de notification :",
+          error
+        );
+      });
+  
+      toast(notification.title, {
+        description: notification.message,
+      });
+    });
+  
+    return unsubscribe;
   }, []);
 
   useEffect(() => {
@@ -272,6 +324,37 @@ function Dashboard() {
               </button>
             ))}
           </div>
+
+          <NotificationBell
+            notifications={notifications}
+            unreadCount={unreadNotifications}
+            onNotificationRead={(id) => {
+              setNotifications((current) =>
+                current.map((notification) =>
+                  notification.id === id
+                    ? {
+                        ...notification,
+                        read: true,
+                      }
+                    : notification
+                )
+              );
+
+              setUnreadNotifications((count) =>
+                Math.max(0, count - 1)
+              );
+            }}
+            onAllRead={() => {
+              setNotifications((current) =>
+                current.map((notification) => ({
+                  ...notification,
+                  read: true,
+                }))
+              );
+
+              setUnreadNotifications(0);
+            }}
+          />
 
           <Button
             variant="outline"
@@ -845,6 +928,7 @@ function SettingsEditor({
     loyalty_threshold: number;
     loyalty_reward: string;
     wheel_prizes: WheelSetting[];
+    referral_surprises: ReferralSurpriseSetting[];
   }) => Promise<void>;
 }) {
   const [threshold, setThreshold] = useState(
@@ -859,15 +943,22 @@ function SettingsEditor({
     settings.wheel_prizes
   );
 
+  const [referralSurprises, setReferralSurprises] =
+    useState<ReferralSurpriseSetting[]>(
+      settings.referral_surprises ?? []
+    );
+
   const totalWeight = prizes.reduce(
     (sum, prize) => sum + Number(prize.weight),
     0
   );
 
-  function updatePrizeWeight(
-    index: number,
-    weight: number
-  ) {
+  const referralTotalWeight = referralSurprises.reduce(
+    (sum, reward) => sum + Number(reward.weight),
+    0
+  );
+
+  function updatePrizeWeight(index: number, weight: number) {
     setPrizes((current) =>
       current.map((prize, i) =>
         i === index
@@ -877,49 +968,120 @@ function SettingsEditor({
     );
   }
 
+  function updateReferralSurpriseWeight(
+    index: number,
+    weight: number
+  ) {
+    setReferralSurprises((current) =>
+      current.map((reward, i) =>
+        i === index
+          ? { ...reward, weight }
+          : reward
+      )
+    );
+  }
+
+  function updateReferralSurpriseLabel(
+    index: number,
+    label: string
+  ) {
+    setReferralSurprises((current) =>
+      current.map((reward, i) =>
+        i === index
+          ? { ...reward, label }
+          : reward
+      )
+    );
+  }
+
   async function handleSave() {
     const cleanThreshold = Math.floor(Number(threshold));
 
-    if (!Number.isFinite(cleanThreshold) || cleanThreshold <= 0) {
-      toast.error("Le seuil de fidélité doit être un nombre positif.");
+    if (
+      !Number.isFinite(cleanThreshold) ||
+      cleanThreshold <= 0
+    ) {
+      toast.error(
+        "Le seuil de fidélité doit être un nombre positif."
+      );
       return;
     }
 
     if (totalWeight !== 100) {
       toast.error(
-        `Les probabilités doivent totaliser 100 %. Actuellement : ${totalWeight} %.`
+        `Les probabilités de la roue doivent totaliser 100 %. Actuellement : ${totalWeight} %.`
       );
       return;
     }
 
-    if (prizes.some((prize) => prize.weight < 0)) {
-      toast.error("Une probabilité ne peut pas être négative.");
+    if (
+      prizes.some(
+        (prize) => Number(prize.weight) < 0
+      )
+    ) {
+      toast.error(
+        "Une probabilité ne peut pas être négative."
+      );
+      return;
+    }
+
+    if (referralTotalWeight !== 100) {
+      toast.error(
+        `Les probabilités des surprises doivent totaliser 100 %. Actuellement : ${referralTotalWeight} %.`
+      );
+      return;
+    }
+
+    if (
+      referralSurprises.some(
+        (item) =>
+          !item.label.trim() ||
+          Number(item.weight) < 0
+      )
+    ) {
+      toast.error(
+        "Chaque surprise doit avoir un nom et une probabilité valide."
+      );
       return;
     }
 
     await onSave({
       loyalty_threshold: cleanThreshold,
+
       loyalty_reward: reward,
+
       wheel_prizes: prizes.map((prize) => ({
         label: prize.label,
         weight: Number(prize.weight),
       })),
+
+      referral_surprises: referralSurprises.map(
+        (item) => ({
+          label: item.label.trim(),
+          weight: Number(item.weight),
+        })
+      ),
     });
   }
 
   return (
     <div className="space-y-8">
-      {/* Fidélité */}
+
+      {/* FIDÉLITÉ */}
       <div>
         <div className="mb-4">
-          <h3 className="font-semibold">Fidélité</h3>
+          <h3 className="font-semibold">
+            Fidélité
+          </h3>
+
           <p className="text-xs text-muted-foreground">
-            Définissez le nombre de pépites nécessaire pour débloquer
-            une récompense.
+            Définissez le nombre de pépites nécessaire
+            pour débloquer une récompense.
           </p>
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+
           <div className="space-y-1">
             <label className="text-xs font-medium">
               Seuil de récompense
@@ -930,7 +1092,9 @@ function SettingsEditor({
               min="1"
               value={threshold}
               onChange={(e) =>
-                setThreshold(Number(e.target.value))
+                setThreshold(
+                  Number(e.target.value)
+                )
               }
               className="w-full h-11 rounded-xl border bg-background px-4 text-sm"
             />
@@ -945,37 +1109,49 @@ function SettingsEditor({
               type="number"
               min="1"
               max="100"
-              value={reward.replace("%", "").replace("-", "")}
+              value={reward
+                .replace("%", "")
+                .replace("-", "")}
               onChange={(e) => {
                 const value = Math.max(
-                 1,
-                 Math.min(100, Number(e.target.value))
+                  1,
+                  Math.min(
+                    100,
+                    Number(e.target.value)
+                  )
                 );
- 
+
                 setReward(`-${value}%`);
               }}
               className="w-full h-11 rounded-xl border bg-background px-4 text-sm"
             />
           </div>
+
         </div>
       </div>
 
-      {/* Roue */}
+
+      {/* ROUE */}
       <div>
         <div className="mb-4">
-          <h3 className="font-semibold">Roue de la chance</h3>
+          <h3 className="font-semibold">
+            Roue de la chance
+          </h3>
+
           <p className="text-xs text-muted-foreground">
-            Les poids déterminent les probabilités relatives de chaque
-            case.
+            Les poids déterminent les probabilités
+            relatives de chaque case.
           </p>
         </div>
 
         <div className="space-y-3">
+
           {prizes.map((prize, index) => (
             <div
               key={`${prize.label}-${index}`}
               className="flex items-center gap-3"
             >
+
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-medium truncate">
                   {prize.label.trim()}
@@ -999,8 +1175,10 @@ function SettingsEditor({
               <span className="text-xs text-muted-foreground w-6">
                 %
               </span>
+
             </div>
           ))}
+
         </div>
 
         <div
@@ -1015,15 +1193,109 @@ function SettingsEditor({
         </div>
       </div>
 
+
+      {/* SURPRISES DE PARRAINAGE */}
+      <div>
+
+        <div className="mb-4">
+          <h3 className="font-semibold">
+            🎁 Surprise Gourmande
+          </h3>
+
+          <p className="text-xs text-muted-foreground">
+            Définissez les récompenses offertes au
+            parrain après la première commande de son
+            filleul.
+          </p>
+        </div>
+
+        <div className="space-y-3">
+
+          {referralSurprises.length === 0 ? (
+            <div className="rounded-xl border border-dashed p-4 text-sm text-muted-foreground">
+              Aucune surprise de parrainage configurée.
+            </div>
+          ) : (
+            referralSurprises.map(
+              (item, index) => (
+                <div
+                  key={`${item.label}-${index}`}
+                  className="flex items-center gap-3"
+                >
+
+                  <div className="flex-1 min-w-0">
+                    <input
+                      value={item.label}
+                      onChange={(e) =>
+                        updateReferralSurpriseLabel(
+                          index,
+                          e.target.value
+                        )
+                      }
+                      className="w-full h-10 rounded-xl border bg-background px-3 text-sm"
+                      placeholder="Nom de la surprise"
+                    />
+                  </div>
+
+                  <input
+                    type="number"
+                    min="0"
+                    max="100"
+                    value={item.weight}
+                    onChange={(e) =>
+                      updateReferralSurpriseWeight(
+                        index,
+                        Number(e.target.value)
+                      )
+                    }
+                    className="w-20 h-10 rounded-xl border bg-background px-3 text-sm text-center"
+                  />
+
+                  <span className="text-xs text-muted-foreground w-6">
+                    %
+                  </span>
+
+                </div>
+              )
+            )
+          )}
+
+        </div>
+
+        <div
+          className={
+            "mt-4 rounded-xl p-3 text-sm font-medium " +
+            (referralTotalWeight === 100
+              ? "bg-emerald-50 text-emerald-700"
+              : "bg-amber-50 text-amber-700")
+          }
+        >
+          Total des probabilités :{" "}
+          {referralTotalWeight} %
+        </div>
+
+      </div>
+
+
+      {/* BOUTON */}
       <div className="flex justify-end">
+
         <Button
           onClick={handleSave}
-          disabled={saving || totalWeight !== 100}
+          disabled={
+            saving ||
+            totalWeight !== 100 ||
+            referralTotalWeight !== 100
+          }
           className="rounded-full px-6"
         >
-          {saving ? "Enregistrement..." : "Enregistrer les paramètres"}
+          {saving
+            ? "Enregistrement..."
+            : "Enregistrer les paramètres"}
         </Button>
+
       </div>
+
     </div>
   );
 }
