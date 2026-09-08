@@ -4,6 +4,7 @@ import { supabase } from "@/lib/supabase";
 import { toast } from "sonner";
 import { Switch } from "@/components/ui/switch";
 import { NotificationBell } from "@/components/NotificationBell";
+import { registerPushSubscription } from "@/lib/push";
 import {
   ArrowLeft,
   TrendingUp,
@@ -355,6 +356,40 @@ function Dashboard() {
               setUnreadNotifications(0);
             }}
           />
+
+        <Button
+          variant="outline"
+          onClick={async () => {
+            try {
+              await registerPushSubscription();
+
+              toast.success(
+                "Notifications activées",
+              {
+                description:
+                  "Cet appareil recevra maintenant les notifications Push.",
+              }
+            );
+          } catch (error) {
+              console.error(
+                  "Erreur activation Push :",
+                error
+              );
+
+              toast.error(
+                "Impossible d'activer les notifications",
+                {
+                  description:
+                    error instanceof Error
+                      ? error.message
+                      : "Une erreur est survenue.",
+                }
+              );
+            }
+          }}
+        >
+          Activer les notifications
+        </Button>
 
           <Button
             variant="outline"
