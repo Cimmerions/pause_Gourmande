@@ -4,7 +4,7 @@ import { supabase } from "@/lib/supabase";
 import { toast } from "sonner";
 import { Switch } from "@/components/ui/switch";
 import { NotificationBell } from "@/components/NotificationBell";
-import { registerPushSubscription } from "@/lib/push";
+import { registerPushSubscription, getAdminPushStatus} from "@/lib/push";
 import {
   ArrowLeft,
   TrendingUp,
@@ -84,6 +84,9 @@ function Dashboard() {
   const [savingSettings, setSavingSettings] = useState(false);
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [unreadNotifications, setUnreadNotifications] = useState(0);
+  const [pushStatus, setPushStatus] = useState<
+    "enabled" | "disabled" | "blocked"
+  >("disabled");
 
   async function loadData() {
 
@@ -127,6 +130,60 @@ function Dashboard() {
   }, []);
 
   useEffect(() => {
+    let cancelled = false;
+  
+    async function checkPushStatus() {
+      const status = await getAdminPushStatus();
+  
+      if (!cancelled) {
+        setPushStatus(status);
+      }
+    }
+  
+    checkPushStatus();
+  
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    const channel = supabase
+      .channel("dashboard-orders")
+      .on(
+        "postgres_changes",
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "orders",
+        },
+        () => {
+          console.log("🟢 NOUVELLE COMMANDE — Realtime");
+          loadData();
+        }
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "UPDATE",
+          schema: "public",
+          table: "orders",
+        },
+        () => {
+          console.log("🔵 COMMANDE MODIFIÉE — Realtime");
+          loadData();
+        }
+      )
+      .subscribe((status) => {
+        console.log("📡 REALTIME ORDERS :", status);
+      });
+  
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, []);
+
+  useEffect(() => {
     async function loadNotifications() {
       const [notificationsData, unreadCount] = await Promise.all([
         getNotifications(30),
@@ -142,6 +199,12 @@ function Dashboard() {
 
   useEffect(() => {
     const unsubscribe = subscribeToNotifications((notification) => {
+
+      console.log(
+        "🔔 REALTIME NOTIFICATION REÇUE :",
+        notification
+      );
+      
       setNotifications((current) => [
         notification,
         ...current.filter((item) => item.id !== notification.id),
@@ -360,22 +423,28 @@ function Dashboard() {
         <Button
           variant="outline"
           onClick={async () => {
+            if (pushStatus === "enabled") {
+              return;
+            }
+          
             try {
               await registerPushSubscription();
-
-              toast.success(
-                "Notifications activées",
-              {
+          
+              setPushStatus("enabled");
+          
+              toast.success("Notifications activées", {
                 description:
                   "Cet appareil recevra maintenant les notifications Push.",
-              }
-            );
-          } catch (error) {
+              });
+            } catch (error) {
               console.error(
-                  "Erreur activation Push :",
+                "Erreur activation Push :",
                 error
               );
-
+          
+              const status = await getAdminPushStatus();
+              setPushStatus(status);
+          
               toast.error(
                 "Impossible d'activer les notifications",
                 {
@@ -388,7 +457,11 @@ function Dashboard() {
             }
           }}
         >
-          Activer les notifications
+          {pushStatus === "enabled"
+            ? "🔔 Notifications activées"
+            : pushStatus === "blocked"
+              ? "🔕 Notifications bloquées"
+              : "🔔 Activer les notifications"}
         </Button>
 
           <Button

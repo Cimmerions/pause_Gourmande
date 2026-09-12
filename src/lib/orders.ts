@@ -19,9 +19,6 @@ import {
   getLoyaltySettings,
 } from "./loyalty";
 
-import {
-  createNotification,
-} from "./notifications";
 
 export async function createOrder(
   order: Order,
@@ -136,19 +133,38 @@ export async function createOrder(
         newBalance
       );
 
+      console.log("🎯 TEST LOYALTY :", {
+        currentPoints,
+        earnedPoints,
+        threshold: loyaltySettings.threshold,
+        newBalance,
+      });
+
       // Débloque une récompense lorsque le seuil est atteint
       if (
         currentPoints < loyaltySettings.threshold &&
         newBalance === loyaltySettings.threshold
       ) {
+        console.log("🎁 SEUIL ATTEINT — création récompense");
+      
         const alreadyHasReward =
           await hasActiveLoyaltyReward(customer.phone);
-
+      
+        console.log(
+          "🎁 RÉCOMPENSE EXISTANTE :",
+          alreadyHasReward
+        );
+      
         if (!alreadyHasReward) {
           await saveReward(
             customer.phone,
             loyaltySettings.reward,
             "loyalty"
+          );
+      
+          console.log(
+            "🎁 RÉCOMPENSE CRÉÉE :",
+            loyaltySettings.reward
           );
         }
       }

@@ -10,6 +10,7 @@ import { ProductCard } from "@/components/ProductCard";
 import { LuckyWheel } from "@/components/LuckyWheel";
 import { CartSheet } from "@/components/CartSheet";
 import { findCustomer } from "@/lib/customers";
+import { registerCustomerPushSubscription } from "@/lib/push";
 import { getActiveLocation, type Location } from "@/lib/locations";
 import { LocationMap } from "@/components/LocationMap.client";
 import { getLoyaltySettings } from "@/lib/loyalty";
@@ -87,6 +88,39 @@ function Home() {
 
       setPoints(customer.points ?? 0);
       setReferralCode(customer.referral_code ?? "");
+    }
+
+    async function enableCustomerNotifications() {
+      console.log("1️⃣ BOUTON NOTIFICATIONS CLIQUÉ");
+      console.log("2️⃣ loyaltyPhone =", loyaltyPhone);
+    
+      if (loyaltyPhone.length !== 8) {
+        console.log("3️⃣ NUMÉRO INVALIDE");
+        toast.error("Entrez d'abord votre numéro de téléphone.");
+        return;
+      }
+    
+      try {
+        console.log("4️⃣ APPEL registerCustomerPushSubscription");
+    
+        await registerCustomerPushSubscription(loyaltyPhone);
+    
+        console.log("5️⃣ REGISTER PUSH TERMINÉ");
+    
+        toast.success("Notifications activées", {
+          description:
+            "Vous recevrez maintenant les notifications concernant vos commandes.",
+        });
+      } catch (error) {
+        console.error("6️⃣ ERREUR :", error);
+    
+        toast.error("Impossible d'activer les notifications", {
+          description:
+            error instanceof Error
+              ? error.message
+              : "Une erreur est survenue.",
+        });
+      }
     }
 
   const filtered = useMemo(() => {
@@ -348,6 +382,16 @@ function Home() {
               onChange={(e) => checkLoyalty(e.target.value.replace(/\D/g, ""))}
               className="h-14 text-center text-lg font-semibold rounded-2xl bg-white border-2 border-brand-gold/20 focus-visible:border-brand-gold focus-visible:ring-brand-gold/20"
             />
+
+            {loyaltyPhone.length === 8 && (
+              <Button
+                variant="outline"
+                className="w-full mt-4 h-12 rounded-2xl"
+                onClick={enableCustomerNotifications}
+              >
+                🔔 Recevoir les notifications de ma commande
+              </Button>
+            )}
           </div>
 
                 <div className="flex items-center justify-between mb-6">

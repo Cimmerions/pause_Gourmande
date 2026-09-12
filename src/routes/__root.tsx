@@ -7,7 +7,7 @@ import {
   HeadContent,
   Scripts,
 } from "@tanstack/react-router";
-import { type ReactNode } from "react";
+import { useEffect, type ReactNode } from "react";
 
 import appCss from "../styles.css?url";
 import { CartProvider } from "../lib/cart-store";
@@ -123,6 +123,25 @@ function RootShell({ children }: { children: ReactNode }) {
 
 function RootComponent() {
   const { queryClient } = Route.useRouteContext();
+
+  useEffect(() => {
+    if ("serviceWorker" in navigator) {
+      navigator.serviceWorker
+        .register("/sw.js")
+        .then((registration) => {
+          console.log(
+            "🟢 Service Worker enregistré :",
+            registration.scope,
+          );
+        })
+        .catch((error) => {
+          console.error(
+            "🔴 Erreur enregistrement Service Worker :",
+            error,
+          );
+        });
+    }
+  }, []);
 
   return (
     <QueryClientProvider client={queryClient}>

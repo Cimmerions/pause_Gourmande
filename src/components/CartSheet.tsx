@@ -5,13 +5,14 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
-import { Minus, Plus, Trash2, ShoppingBag } from "lucide-react";
+import { Minus, Plus, Trash2, ShoppingBag, Bell } from "lucide-react";
 import { toast } from "sonner";
 import { useCart } from "@/lib/cart-store";
 import { formatFCFA } from "../lib/products";
 import { findCustomer } from "@/lib/customers";
 import { getRewards } from "@/lib/rewards";
 import { getLoyaltySettings } from "@/lib/loyalty";
+import { registerCustomerPushSubscription, getCustomerPushStatus} from "@/lib/push";
 
 export function CartSheet({ children }: { children: React.ReactNode }) {
   const { items, setQty, remove, setNote, total, submitOrder } = useCart();
@@ -29,7 +30,11 @@ export function CartSheet({ children }: { children: React.ReactNode }) {
   const [selectedReward, setSelectedReward] = useState<any>(null);
   const [loyaltyThreshold, setLoyaltyThreshold] = useState(500);
   const searchTimeout = useRef<NodeJS.Timeout | null>(null);
+  const [pushStatus, setPushStatus] = useState<
+  "enabled" | "disabled" | "blocked"
+>("disabled");
 
+  const [enablingNotifications, setEnablingNotifications] = useState(false);
   let rewardDiscount = 0;
 
   if (selectedReward?.type === "discount") {
@@ -58,7 +63,6 @@ export function CartSheet({ children }: { children: React.ReactNode }) {
       setRewards([]);
       return;
     }
-
 
     searchTimeout.current = setTimeout(async () => {
 
@@ -92,6 +96,29 @@ export function CartSheet({ children }: { children: React.ReactNode }) {
 
   }, [phone]);
 
+  useEffect(() => {
+    let cancelled = false;
+  
+    async function checkPushStatus() {
+      if (phone.length !== 8) {
+        setPushStatus("disabled");
+        return;
+      }
+  
+      const status = await getCustomerPushStatus(phone);
+  
+      if (!cancelled) {
+        setPushStatus(status);
+      }
+    }
+  
+    checkPushStatus();
+  
+    return () => {
+      cancelled = true;
+    };
+  }, [phone]);
+
   async function loadCustomer(phone: string) {
 
     if (phone.length !== 8) {
@@ -111,6 +138,41 @@ export function CartSheet({ children }: { children: React.ReactNode }) {
     setCustomer(c);
     setCustomerPoints(c.points ?? 0);
 
+  }
+
+  async function enableCustomerNotifications() {
+    if (phone.length !== 8) {
+      toast.error("Merci de renseigner un numéro valide.");
+      return;
+    }
+  
+    setEnablingNotifications(true);
+  
+    try {
+      await registerCustomerPushSubscription(phone);
+  
+      setPushStatus("enabled");
+  
+      toast.success("Notifications activées 🔔", {
+        description:
+          "Vous serez prévenu lorsque votre commande sera confirmée ou annulée.",
+      });
+    } catch (error) {
+      console.error(
+        "Erreur activation notifications client :",
+        error
+      );
+  
+      const status = await getCustomerPushStatus(phone);
+      setPushStatus(status);
+  
+      toast.error("Impossible d'activer les notifications.", {
+        description:
+          "Vérifiez que les notifications sont autorisées dans votre navigateur.",
+      });
+    } finally {
+      setEnablingNotifications(false);
+    }
   }
 
   const validate = async () => {
@@ -246,10 +308,16 @@ export function CartSheet({ children }: { children: React.ReactNode }) {
                   Vos infos
                 </p>
                 <div className="grid grid-cols-2 gap-3">
+
+                  {/* NOM */}
                   <div className="space-y-1">
                     <Label className="text-xs">Nom</Label>
-                    <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Kofi" />
+                    <Input value={name} 
+                    onChange={(e) => setName(e.target.value)} 
+                    placeholder="Kofi" />
                   </div>
+
+                  {/* TÉLÉPHONE */}
                   <div className="space-y-1">
                     <Label className="text-xs">Téléphone</Label>
                     <Input
@@ -260,6 +328,74 @@ export function CartSheet({ children }: { children: React.ReactNode }) {
                       placeholder="+228…"
                     />
 
+                    {/* NOTIFICATIONS */}
+                    {phone.length === 8 && (
+                      <div className="mt-3 rounded-2xl border border-brand-gold/30 bg-brand-gold/5 p-3">
+                        <div className="flex items-start gap-3">
+                          <div className="mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-full bg-brand-gold/10">
+                            <Bell className="size-4 text-brand-gold" />
+                          </div>
+
+                          <div className="flex-1 min-w-0">
+
+                            {pushStatus === "enabled" && (
+                          <>
+                            <p className="text-sm font-semibold">
+                              Notifications activées ✓
+                            </p>
+
+                            <p className="text-xs text-muted-foreground mt-1">
+                              Vous serez prévenu lorsque votre commande sera confirmée
+                              ou annulée.
+                            </p>
+                          </>
+                        )}
+
+                        {pushStatus === "disabled" && (
+                          <>
+                            <p className="text-sm font-semibold">
+                              Suivre ma commande 🔔
+                            </p>
+
+                            <p className="text-xs text-muted-foreground mt-1">
+                              Recevez une notification lorsque votre commande est
+                              confirmée ou annulée.
+                            </p>
+
+                            <Button
+                              type="button"
+                              variant="outline"
+                              disabled={enablingNotifications}
+                              onClick={enableCustomerNotifications}
+                              className="mt-3 h-9 rounded-full text-xs font-semibold"
+                            >
+                              {enablingNotifications
+                                ? "Activation…"
+                                : "Activer les notifications"}
+                            </Button>
+                          </>
+                        )}
+
+                        {pushStatus === "blocked" && (
+                          <>
+                            <p className="text-sm font-semibold text-destructive">
+                              Notifications bloquées
+                            </p>
+
+                            <p className="text-xs text-muted-foreground mt-1">
+                              Les notifications sont bloquées dans votre navigateur.
+                              Autorisez-les dans les paramètres du site pour recevoir
+                              le suivi de votre commande.
+                            </p>
+                          </>
+                        )}
+
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                  {/* PARRAINAGE */}
                   <div className="space-y-2">
                     <Label htmlFor="referralCode">
                       Code parrainage <span className="text-muted-foreground">(facultatif)</span>
