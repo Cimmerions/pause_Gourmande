@@ -232,32 +232,39 @@ function Dashboard() {
   }, []);
 
   useEffect(() => {
-
-  async function checkAdmin(){
-
-    const {
-      data: { session }
-    } = await supabase.auth.getSession();
-
-
-    if (!session) {
-
-      navigate({
-        to:"/admin-login"
-      });
-
-      return;
+    async function checkAdmin() {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+  
+      if (!user) {
+        navigate({
+          to: "/admin-login",
+        });
+        return;
+      }
+  
+      const { data: admin, error } = await supabase
+        .from("admin_users")
+        .select("role")
+        .eq("user_id", user.id)
+        .maybeSingle();
+  
+      if (error || !admin) {
+        await supabase.auth.signOut();
+  
+        navigate({
+          to: "/admin-login",
+        });
+  
+        return;
+      }
+  
+      setCheckingAuth(false);
     }
-
-
-    setCheckingAuth(false);
-
-  }
-
-
-  checkAdmin();
-
-}, []);
+  
+    checkAdmin();
+  }, []);
 
   const filtered = useMemo(() => {
     const cfg = RANGES.find((r) => r.key === range)!;
