@@ -12,18 +12,19 @@ function generateReferralCode() {
 }
 
 export async function findCustomer(phone: string) {
-  const { data, error } = await supabase
-    .from("customers")
-    .select("*")
-    .eq("phone", phone)
-    .maybeSingle();
+  const { data, error } = await supabase.rpc(
+    "find_customer_by_phone",
+    {
+      customer_phone: phone,
+    }
+  );
 
   if (error) {
     console.error(error);
     return null;
   }
 
-  return data;
+  return data?.[0] ?? null;
 }
 
 export async function createCustomer(
@@ -57,18 +58,19 @@ export async function createCustomer(
 export async function findCustomerByReferralCode(
   referralCode: string
 ) {
-  const { data, error } = await supabase
-    .from("customers")
-    .select("*")
-    .eq("referral_code", referralCode)
-    .maybeSingle();
+  const { data, error } = await supabase.rpc(
+    "find_customer_by_referral_code",
+    {
+      customer_referral_code: referralCode,
+    }
+  );
 
   if (error) {
     console.error(error);
     return null;
   }
 
-  return data;
+  return data?.[0] ?? null;
 }
 
 export async function updateCustomerPoints(

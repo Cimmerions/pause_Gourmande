@@ -59,21 +59,14 @@ export async function saveReward(
   reward: string,
   source: "wheel" | "loyalty" | "referral" = "wheel"
 ) {
-  const type =
-    reward.includes("%")
-      ? "discount"
-      : "product";
-
-  const { data, error } = await supabase
-    .from("customer_rewards")
-    .insert({
-      customer_phone: phone,
-      type,
-      value: reward,
-      source,
-    })
-    .select()
-    .single();
+  const { data, error } = await supabase.rpc(
+    "save_customer_reward",
+    {
+      p_phone: phone,
+      p_reward: reward,
+      p_source: source,
+    }
+  );
 
   if (error) {
     console.error("SAVE REWARD :", error);
@@ -84,48 +77,52 @@ export async function saveReward(
 }
 
 export async function getRewards(phone: string) {
-  const { data, error } = await supabase
-    .from("customer_rewards")
-    .select("*")
-    .eq("customer_phone", phone)
-    .eq("used", false);
+  const { data, error } = await supabase.rpc(
+    "get_customer_rewards",
+    {
+      p_phone: phone,
+    }
+  );
 
   if (error) {
     console.error(error);
     return [];
   }
 
-  return data;
+  return data ?? [];
 }
 
 export async function useReward(
   id: number,
   orderId: string
 ) {
-  return await supabase
-    .from("customer_rewards")
-    .update({
-      used: true,
-      used_at: new Date().toISOString(),
-      order_id: orderId,
-    })
-    .eq("id", id);
+  const { data, error } = await supabase.rpc(
+    "use_customer_reward",
+    {
+      p_id: id,
+      p_order_id: orderId,
+    }
+  );
+
+  if (error) {
+    console.error("USE REWARD :", error);
+  }
+
+  return { data, error };
 }
 
 export async function hasActiveLoyaltyReward(phone: string) {
-  const { data, error } = await supabase
-    .from("customer_rewards")
-    .select("id")
-    .eq("customer_phone", phone)
-    .eq("source", "loyalty")
-    .eq("used", false)
-    .limit(1)
-    .maybeSingle();
+  const { data, error } = await supabase.rpc(
+    "has_active_loyalty_reward",
+    {
+      p_phone: phone,
+    }
+  );
 
   if (error) {
     console.error("CHECK LOYALTY REWARD :", error);
     return false;
   }
 
-  return !!data;
+  return data === true;
 }

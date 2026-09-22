@@ -326,49 +326,26 @@ export async function registerCustomerPushSubscription(
     auth: subscriptionJson.keys.auth,
   });
 
-  const { data: existingSubscription, error: findError } = await supabase
-  .from("push_subscriptions")
-  .select("id")
-  .eq("endpoint", subscriptionJson.endpoint)
-  .maybeSingle();
-
-if (findError) {
-  console.error("Erreur recherche abonnement Push :", findError);
-  throw findError;
-}
-
-const subscriptionData = {
-  customer_phone: phone,
-  endpoint: subscriptionJson.endpoint,
-  p256dh: subscriptionJson.keys.p256dh,
-  auth: subscriptionJson.keys.auth,
-  updated_at: new Date().toISOString(),
-};
-
-if (existingSubscription) {
-  const { error: updateError } = await supabase
-    .from("push_subscriptions")
-    .update(subscriptionData)
-    .eq("id", existingSubscription.id);
-
-  if (updateError) {
-    console.error("Erreur mise à jour Push client :", updateError);
-    throw updateError;
+  const { error } = await supabase.rpc(
+    "register_customer_push",
+    {
+      p_phone: phone,
+      p_endpoint: subscriptionJson.endpoint,
+      p_p256dh: subscriptionJson.keys.p256dh,
+      p_auth: subscriptionJson.keys.auth,
+    }
+  );
+  
+  if (error) {
+    console.error(
+      "Erreur enregistrement Push client :",
+      error
+    );
+  
+    throw error;
   }
-
-  console.log("🟢 ABONNEMENT PUSH MIS À JOUR");
-} else {
-  const { error: insertError } = await supabase
-    .from("push_subscriptions")
-    .insert(subscriptionData);
-
-  if (insertError) {
-    console.error("Erreur insertion Push client :", insertError);
-    throw insertError;
-  }
-
-  console.log("🟢 NOUVEL ABONNEMENT PUSH CRÉÉ");
-}
+  
+  console.log("🟢 ABONNEMENT PUSH CLIENT ENREGISTRÉ");
 }
 
 export async function getCustomerPushStatus(
@@ -400,12 +377,13 @@ export async function getCustomerPushStatus(
 
     const endpoint = subscription.endpoint;
 
-    const { data, error } = await supabase
-      .from("push_subscriptions")
-      .select("id")
-      .eq("endpoint", endpoint)
-      .eq("customer_phone", phone)
-      .maybeSingle();
+    const { data, error } = await supabase.rpc(
+      "get_customer_push_status",
+      {
+        p_phone: phone,
+        p_endpoint: endpoint,
+      }
+    );
 
     if (error) {
       console.error(

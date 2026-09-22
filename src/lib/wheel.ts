@@ -4,19 +4,18 @@ import { getLoyaltySettings } from "./loyalty";
 
 
 export async function saveSpin(
-  phone:string,
-  prize:string,
-  points:number
-){
-
-  return await supabase
-    .from("wheel_spins")
-    .insert({
-      customer_phone:phone,
-      prize,
-      points
-    });
-
+  phone: string,
+  prize: string,
+  points: number
+) {
+  return await supabase.rpc(
+    "save_wheel_spin",
+    {
+      p_phone: phone,
+      p_prize: prize,
+      p_points: points,
+    }
+  );
 }
 
 
@@ -25,30 +24,28 @@ export async function addCustomerPoints(
   phone: string,
   points: number
 ) {
+  const { error } = await supabase.rpc(
+    "add_customer_points",
+    {
+      p_phone: phone,
+      p_points: points,
+    }
+  );
+
+  if (error) {
+    console.error("ADD CUSTOMER POINTS :", error);
+    return;
+  }
+
   const customer = await findCustomer(phone);
 
   if (!customer) return;
 
   const loyaltySettings = await getLoyaltySettings();
 
-  const currentPoints = customer.points ?? 0;
-
-  const newBalance = Math.min(
-    loyaltySettings.threshold,
-    currentPoints + Math.max(0, points)
-  );
-
-  await supabase
-    .from("customers")
-    .update({
-      points: newBalance,
-    })
-    .eq("id", customer.id);
-
-    if (
-      currentPoints < loyaltySettings.threshold &&
-      newBalance === loyaltySettings.threshold
-    ) {
+  if (
+    customer.points >= loyaltySettings.threshold
+  ) {
     const { hasActiveLoyaltyReward, saveReward } =
       await import("./rewards");
 
@@ -65,27 +62,18 @@ export async function addCustomerPoints(
   }
 }
 
-export async function hasPlayedToday(phone:string){
+export async function hasPlayedToday(phone: string) {
+  const { data, error } = await supabase.rpc(
+    "has_played_wheel_today",
+    {
+      p_phone: phone,
+    }
+  );
 
-  const {data,error}=await supabase
-    .from("wheel_spins")
-    .select("id")
-    .eq("customer_phone",phone)
-    .gte(
-      "created_at",
-      new Date(
-        new Date().setHours(0,0,0,0)
-      ).toISOString()
-    )
-    .maybeSingle();
-
-
-  if(error){
+  if (error) {
     console.error(error);
     return false;
   }
 
-
-  return !!data;
-
+  return data === true;
 }

@@ -250,8 +250,18 @@ export function CartSheet({ children }: { children: React.ReactNode }) {
             </div>
           ) : (
             <>
-              {items.map((it) => (
-                <div key={it.product.id} className="flex gap-4">
+              {items.map((it) => {
+                const addonsTotal =
+                  it.addons?.reduce((sum, addon) => sum + Number(addon.price), 0) ?? 0;
+ 
+                const unitPrice = Number(it.product.price) + addonsTotal;
+                const lineTotal = unitPrice * it.qty;
+
+              return (
+                <div
+                  key={`${it.product.id}-${it.addons?.map((a) => a.productId).join("-") ?? "none"}`}
+                  className="flex gap-4"
+                >
                   <img
                     src={it.product.image}
                     alt={it.product.name}
@@ -260,9 +270,13 @@ export function CartSheet({ children }: { children: React.ReactNode }) {
                     width={80}
                     height={80}
                   />
+
                   <div className="flex-1 min-w-0">
                     <div className="flex justify-between items-start gap-2">
-                      <p className="font-semibold truncate">{it.product.name}</p>
+                      <p className="font-semibold truncate">
+                        {it.product.name}
+                      </p>
+
                       <button
                         onClick={() => remove(it.product.id)}
                         className="text-muted-foreground hover:text-destructive transition"
@@ -271,37 +285,80 @@ export function CartSheet({ children }: { children: React.ReactNode }) {
                         <Trash2 className="size-4" />
                       </button>
                     </div>
+
+                    {/* Prix avec suppléments */}
                     <p className="text-sm text-brand-gold font-medium">
                       {formatFCFA(it.product.price)}
                     </p>
-                    <div className="flex items-center gap-2 mt-2">
-                      <Button
-                        variant="outline"
-                        size="icon"
-                        className="size-8 rounded-full"
-                        onClick={() => setQty(it.product.id, it.qty - 1)}
+
+                    {/* Suppléments sélectionnés */}
+                    {it.addons && it.addons.length > 0 && (
+                      <div className="mt-2 space-y-1">
+                        {it.addons.map((addon) => (
+                     <div
+                        key={addon.productId}
+                        className="flex items-center justify-between text-xs text-muted-foreground"
                       >
-                        <Minus className="size-3" />
-                      </Button>
-                      <span className="w-6 text-center font-semibold text-sm">{it.qty}</span>
-                      <Button
-                        variant="outline"
-                        size="icon"
-                        className="size-8 rounded-full"
-                        onClick={() => setQty(it.product.id, it.qty + 1)}
-                      >
-                        <Plus className="size-3" />
-                      </Button>
-                    </div>
-                    <Textarea
-                      placeholder="Un mot pour ce produit ? (ex: sans banane)"
-                      className="mt-2 text-xs min-h-[36px] resize-none"
-                      value={it.note ?? ""}
-                      onChange={(e) => setNote(it.product.id, e.target.value)}
-                    />
+                        <span>+ {addon.name}</span>
+
+                        <span className="text-brand-gold font-medium">
+                          +{formatFCFA(Number(addon.price))}
+                        </span>
+                      </div>
+                    ))}
+
+                    <p className="mt-2 text-sm font-semibold text-foreground">
+                      Total : {formatFCFA(unitPrice)}
+                    </p>
                   </div>
-                </div>
-              ))}
+              )}
+
+              {/* Quantité */}
+              <div className="flex items-center gap-2 mt-3">
+                <Button
+                  variant="outline"
+                  size="icon"
+                  className="size-8 rounded-full"
+                  onClick={() => setQty(it.product.id, it.qty - 1)}
+                >
+                  <Minus className="size-3" />
+                </Button>
+
+                <span className="w-6 text-center font-semibold text-sm">
+                  {it.qty}
+                </span>
+
+                <Button
+                  variant="outline"
+                  size="icon"
+                  className="size-8 rounded-full"
+                  onClick={() => setQty(it.product.id, it.qty + 1)}
+                >
+                  <Plus className="size-3" />
+                </Button>
+              </div>
+
+              {/* Note */}
+              <Textarea
+                placeholder="Un mot pour ce produit ? (ex: sans banane)"
+                className="mt-2 text-xs min-h-[36px] resize-none"
+                value={it.note ?? ""}
+                onChange={(e) => setNote(it.product.id, e.target.value)}
+              />
+
+              {/* Sous-total de la ligne */}
+              {it.qty > 1 && (
+                <p className="mt-2 text-xs text-muted-foreground">
+                  Sous-total :{" "}
+                    <span className="font-semibold text-foreground">
+                      {formatFCFA(lineTotal)}
+                    </span>
+                </p>
+              )}
+            </div>
+          </div>
+        );
+      })}
 
               <div className="border-t pt-6 space-y-4">
                 <p className="text-xs font-bold uppercase tracking-widest text-brand-gold">

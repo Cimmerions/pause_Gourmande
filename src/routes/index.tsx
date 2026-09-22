@@ -34,7 +34,13 @@ export const Route = createFileRoute("/")({
   component: Home,
 });
 
-const CATEGORIES = ["Tout", "Crêpes", "Gaufres", "Boissons"] as const;
+const CATEGORIES = [
+  "Tout",
+  "Crêpes",
+  "Gaufres",
+  "Pancakes",
+  "Packs",
+] as const;
 
 function Home() {
   const [products,setProducts]=useState<Product[]>([]);
@@ -123,14 +129,23 @@ function Home() {
       }
     }
 
-  const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    return products.filter(
-      (p) =>
-        (cat === "Tout" || p.category === cat) &&
-        (!q || p.name.toLowerCase().includes(q) || p.description.toLowerCase().includes(q)),
+    const supplements = useMemo(
+      () => products.filter((p) => p.category === "Suppléments"),
+      [products]
     );
-  }, [products, query, cat]);
+
+    const filtered = useMemo(() => {
+      const q = query.trim().toLowerCase();
+    
+      return products.filter(
+        (p) =>
+          p.category !== "Suppléments" &&
+          (cat === "Tout" || p.category === cat) &&
+          (!q ||
+            p.name.toLowerCase().includes(q) ||
+            p.description.toLowerCase().includes(q)),
+      );
+    }, [products, query, cat]);
 
   const progress = Math.min(100, Math.round((points / nextRewardAt) * 100));
 
@@ -300,7 +315,11 @@ function Home() {
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
             {filtered.map((p) => (
-              <ProductCard key={p.id} product={p} />
+              <ProductCard
+                key={p.id}
+                product={p}
+                addons={supplements}
+              />
             ))}
           </div>
 

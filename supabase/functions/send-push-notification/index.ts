@@ -42,7 +42,7 @@ Deno.serve(async (req) => {
         headers: {
           "Access-Control-Allow-Origin": "*",
           "Access-Control-Allow-Headers":
-            "authorization, x-client-info, apikey, content-type",
+            "authorization, x-client-info, apikey, content-type, x-webhook-key",
         },
       });
     }
@@ -63,67 +63,156 @@ Deno.serve(async (req) => {
       );
     }
 
-  const webhookKey = req.headers.get("X-Webhook-Key");
-  const expectedWebhookKey = Deno.env.get("PUSH_WEBHOOK_KEY");
+    // ─────────────────────────────────────────────
+    // AUTHENTIFICATION WEBHOOK
+    // ─────────────────────────────────────────────
 
-  if (!expectedWebhookKey) {
-    console.error("PUSH_WEBHOOK_KEY non configurée.");
+    const webhookKey = req.headers.get("X-Webhook-Key");
+    const expectedWebhookKey =
+      Deno.env.get("PUSH_WEBHOOK_KEY");
 
-    return new Response(
-      JSON.stringify({
-        success: false,
-        error: "Configuration serveur incomplète.",
-      }),
-      {
-        status: 500,
-        headers: {
-          "Content-Type": "application/json",
-          "Access-Control-Allow-Origin": "*",
-        },
-      }
-    );
-  }
+    if (!expectedWebhookKey) {
+      console.error(
+        "PUSH_WEBHOOK_KEY non configurée."
+      );
 
-  if (!webhookKey || webhookKey !== expectedWebhookKey) {
-    return new Response(
-      JSON.stringify({
-        success: false,
-        error: "Non autorisé.",
-      }),
-      {
-        status: 401,
-        headers: {
-          "Content-Type": "application/json",
-          "Access-Control-Allow-Origin": "*",
-        },
-      }
-    );
-  }
+      return new Response(
+        JSON.stringify({
+          success: false,
+          error: "Configuration serveur incomplète.",
+        }),
+        {
+          status: 500,
+          headers: {
+            "Content-Type": "application/json",
+            "Access-Control-Allow-Origin": "*",
+          },
+        }
+      );
+    }
 
-  const body = await req.json();
+    if (
+      !webhookKey ||
+      webhookKey !== expectedWebhookKey
+    ) {
+      return new Response(
+        JSON.stringify({
+          success: false,
+          error: "Non autorisé.",
+        }),
+        {
+          status: 401,
+          headers: {
+            "Content-Type": "application/json",
+            "Access-Control-Allow-Origin": "*",
+          },
+        }
+      );
+    }
 
-  const title =
-    body.title || "Pause Gourmande";
+    // ─────────────────────────────────────────────
+    // DONNÉES DE LA NOTIFICATION
+    // ─────────────────────────────────────────────
+
+    const body = await req.json();
+
+    const title =
+      body.title || "Pause Gourmande";
+
     const message =
       body.body || "Nouvelle notification";
 
     const url =
       body.url || "/dashboard";
 
+    const tag =
+      body.tag ||
+      "pause-gourmande-notification";
+
+    const target =
+      body.target || "all";
+
+    const customerPhone =
+      body.customer_phone || null;
+
     console.log(
-      "Envoi Push :",
-      title,
-      message
+      "📨 Notification Push :",
+      {
+        title,
+        target,
+        customerPhone,
+      }
     );
+
+    // ─────────────────────────────────────────────
+    // VALIDATION DE LA CIBLE
+    // ─────────────────────────────────────────────
+
+    if (
+      !["admin", "client", "all"].includes(target)
+    ) {
+      return new Response(
+        JSON.stringify({
+          success: false,
+          error: "Cible Push invalide.",
+        }),
+        {
+          status: 400,
+          headers: {
+            "Content-Type": "application/json",
+            "Access-Control-Allow-Origin": "*",
+          },
+        }
+      );
+    }
+
+    if (
+      target === "client" &&
+      !customerPhone
+    ) {
+      return new Response(
+        JSON.stringify({
+          success: false,
+          error:
+            "customer_phone est requis pour une notification client.",
+        }),
+        {
+          status: 400,
+          headers: {
+            "Content-Type": "application/json",
+            "Access-Control-Allow-Origin": "*",
+          },
+        }
+      );
+    }
+
+    // ─────────────────────────────────────────────
+    // RÉCUPÉRATION DES ABONNEMENTS
+    // ─────────────────────────────────────────────
+
+    let query = supabase
+      .from("push_subscriptions")
+      .select(
+        "id, endpoint, p256dh, auth, user_id, customer_phone"
+      );
+
+    if (target === "admin") {
+      query = query.not("user_id", "is", null);
+    }
+
+    if (target === "client") {
+      query = query
+        .is("user_id", null)
+        .eq(
+          "customer_phone",
+          customerPhone
+        );
+    }
 
     const {
       data: subscriptions,
       error: subscriptionsError,
-    } = await supabase
-      .from("push_subscriptions")
-      .select(
-        "id, endpoint, p256dh, auth"
-      );
+    } = await query;
 
     if (subscriptionsError) {
       console.error(
@@ -134,13 +223,23 @@ Deno.serve(async (req) => {
       throw subscriptionsError;
     }
 
-    if (!subscriptions || subscriptions.length === 0) {
+    if (
+      !subscriptions ||
+      subscriptions.length === 0
+    ) {
+      console.log(
+        "ℹ️ Aucun abonnement correspondant à la cible."
+      );
+
       return new Response(
         JSON.stringify({
           success: true,
           message:
-            "Aucun abonnement Push enregistré.",
+            "Aucun abonnement Push correspondant.",
           sent: 0,
+          failed: 0,
+          removed: 0,
+          total: 0,
         }),
         {
           status: 200,
@@ -152,27 +251,36 @@ Deno.serve(async (req) => {
       );
     }
 
+    // ─────────────────────────────────────────────
+    // PAYLOAD PUSH
+    // ─────────────────────────────────────────────
+
     const payload = JSON.stringify({
       title,
       body: message,
       url,
-      tag:
-        body.tag ||
-        "pause-gourmande-notification",
+      tag,
     });
 
     let sent = 0;
     let failed = 0;
     let removed = 0;
 
+    // ─────────────────────────────────────────────
+    // ENVOI
+    // ─────────────────────────────────────────────
+
     for (const subscription of subscriptions) {
       try {
         await webpush.sendNotification(
           {
-            endpoint: subscription.endpoint,
+            endpoint:
+              subscription.endpoint,
             keys: {
-              p256dh: subscription.p256dh,
-              auth: subscription.auth,
+              p256dh:
+                subscription.p256dh,
+              auth:
+                subscription.auth,
             },
           },
           payload
@@ -180,40 +288,54 @@ Deno.serve(async (req) => {
 
         sent++;
 
+        console.log(
+          "🟢 Push envoyé :",
+          subscription.id
+        );
+
       } catch (error) {
         failed++;
 
         console.error(
-            "ERREUR ENVOI PUSH :",
-            error
-          );
+          "🔴 ERREUR ENVOI PUSH :",
+          error
+        );
 
         const statusCode =
           typeof error === "object" &&
           error !== null &&
           "statusCode" in error
             ? Number(
-                (error as {
-                  statusCode?: number;
-                }).statusCode
+                (
+                  error as {
+                    statusCode?: number;
+                  }
+                ).statusCode
               )
             : null;
 
         console.error(
-          "Erreur envoi Push :",
-          statusCode,
-          subscription.endpoint
+          "Code erreur :",
+          statusCode
         );
+
+        // ─────────────────────────────────────
+        // SUPPRESSION DES ABONNEMENTS INVALIDES
+        // ─────────────────────────────────────
 
         if (
           statusCode === 404 ||
           statusCode === 410
         ) {
-          const { error: deleteError } =
-            await supabase
-              .from("push_subscriptions")
-              .delete()
-              .eq("id", subscription.id);
+          const {
+            error: deleteError,
+          } = await supabase
+            .from("push_subscriptions")
+            .delete()
+            .eq(
+              "id",
+              subscription.id
+            );
 
           if (deleteError) {
             console.error(
@@ -222,10 +344,19 @@ Deno.serve(async (req) => {
             );
           } else {
             removed++;
+
+            console.log(
+              "🗑️ Abonnement invalide supprimé :",
+              subscription.id
+            );
           }
         }
       }
     }
+
+    // ─────────────────────────────────────────────
+    // RÉPONSE
+    // ─────────────────────────────────────────────
 
     return new Response(
       JSON.stringify({
@@ -234,6 +365,9 @@ Deno.serve(async (req) => {
         failed,
         removed,
         total: subscriptions.length,
+        target,
+        customer_phone:
+          customerPhone,
       }),
       {
         status: 200,
@@ -246,7 +380,7 @@ Deno.serve(async (req) => {
 
   } catch (error) {
     console.error(
-      "Erreur Edge Function :",
+      "❌ Erreur Edge Function :",
       error
     );
 

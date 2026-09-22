@@ -707,29 +707,52 @@ function Dashboard() {
                 key={o.id}
                 order={o}
                 onStatus={async (id, status) => {
-
-                  await updateOrderStatus(id, status);
-
+                  const result = await updateOrderStatus(id, status);
+                
+                  if (result.error) {
+                    console.error(
+                      "ERREUR CHANGEMENT STATUT :",
+                      result.error
+                    );
+                
+                    toast.error(
+                      status === "cancelled"
+                        ? "Impossible d'annuler la commande."
+                        : "Impossible de valider la commande.",
+                      {
+                        description: result.error.message,
+                      }
+                    );
+                
+                    return;
+                  }
+                
+                  toast.success(
+                    status === "cancelled"
+                      ? "Commande annulée."
+                      : "Commande validée."
+                  );
+                
                   const updated = await getOrders();
-
+                
                   setOrders(
                     updated.map((order: any) => ({
                       ...order,
                       customerName: order.customer_name,
                       createdAt: new Date(order.created_at).getTime(),
-                      lines: (order.order_items ?? []).map((item:any)=>({
-                        productId:item.product_id,
-                        name:item.name,
-                        qty:item.quantity,
-                        price:item.price,
-                        category:"",
+                      lines: (order.order_items ?? []).map((item: any) => ({
+                        productId: item.product_id,
+                        name: item.name,
+                        qty: item.quantity,
+                        price: item.price,
+                        category: "",
                         note: item.note ?? undefined,
                       })),
                       pointsEarned: Math.floor(order.total / 100),
                     }))
                   );
-
                 }}
+                
               />
               ))}
             </div>

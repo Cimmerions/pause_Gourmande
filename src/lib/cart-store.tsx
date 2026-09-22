@@ -9,10 +9,20 @@ import {
 } from "react";
 import type { Product } from "./products";
 import { createOrder } from "./orders";
-import { useReward } from "./rewards";
 import { updateCustomerPoints } from "./customers";
 
-export type CartItem = { product: Product; qty: number; note?: string };
+export type CartAddon = {
+  productId: string;
+  name: string;
+  price: number;
+};
+
+export type CartItem = {
+  product: Product;
+  qty: number;
+  addons?: CartAddon[];
+  note?: string;
+};
 
 export type OrderLine = {
   productId: string;
@@ -21,6 +31,7 @@ export type OrderLine = {
   qty: number;
   price: number;
   note?: string;
+  addons?: CartAddon[];
 };
 
 export type Order = {
@@ -53,7 +64,7 @@ type SubmitInput = {
 
 type CartContextValue = {
   items: CartItem[];
-  add: (p: Product) => void;
+  add: (p: Product, addons?: CartAddon[]) => void;
   remove: (id: string) => void;
   setQty: (id: string, qty: number) => void;
   setNote: (id: string, note: string) => void;
@@ -93,16 +104,35 @@ export function CartProvider({ children }: { children: ReactNode }) {
     localStorage.setItem(ORDERS_KEY, JSON.stringify(orders));
   }, [orders, hydrated]);
 
-  const add = useCallback((p: Product) => {
-    setItems((prev) => {
-      const found = prev.find((i) => i.product.id === p.id);
-      if (found)
-        return prev.map((i) =>
-          i.product.id === p.id ? { ...i, qty: i.qty + 1 } : i,
+  const add = useCallback(
+    (p: Product, addons: CartAddon[] = []) => {
+      setItems((prev) => {
+        const found = prev.find(
+          (i) =>
+            i.product.id === p.id &&
+            JSON.stringify(i.addons ?? []) === JSON.stringify(addons)
         );
-      return [...prev, { product: p, qty: 1 }];
-    });
-  }, []);
+  
+        if (found) {
+          return prev.map((i) =>
+            i === found
+              ? { ...i, qty: i.qty + 1 }
+              : i
+          );
+        }
+  
+        return [
+          ...prev,
+          {
+            product: p,
+            qty: 1,
+            addons,
+          },
+        ];
+      });
+    },
+    []
+  );
 
   const remove = useCallback(
     (id: string) => setItems((prev) => prev.filter((i) => i.product.id !== id)),
@@ -132,10 +162,15 @@ export function CartProvider({ children }: { children: ReactNode }) {
       if (!items.length) return null;
 
 
-      const originalTotal = items.reduce(
-        (s, i) => s + i.qty * i.product.price,
-        0
-      );
+      const originalTotal = items.reduce((s, i) => {
+        const addonsTotal =
+          i.addons?.reduce(
+            (sum, addon) => sum + Number(addon.price),
+            0
+          ) ?? 0;
+      
+        return s + i.qty * (Number(i.product.price) + addonsTotal);
+      }, 0);
 
       const total = input.total ?? originalTotal;
 
@@ -160,8 +195,21 @@ export function CartProvider({ children }: { children: ReactNode }) {
           name: i.product.name,
           category: i.product.category,
           qty: i.qty,
-          price: i.product.price,
-          note: i.note,
+          price:
+            Number(i.product.price) +
+            (i.addons?.reduce(
+              (sum, addon) => sum + Number(addon.price),
+              0
+            ) ?? 0),
+          note: [
+            ...(i.addons?.map(
+              (addon) => `+ ${addon.name} (+${addon.price} FCFA)`
+            ) ?? []),
+            i.note,
+          ]
+            .filter(Boolean)
+            .join(" • ") || undefined,
+          addons: i.addons,
         })),
 
         total,
@@ -174,7 +222,8 @@ export function CartProvider({ children }: { children: ReactNode }) {
       // 1. Envoi Supabase
       const createdOrder = await createOrder(
         order,
-        input.referralCode
+        input.referralCode,
+        input.rewardId
       );
 
       if (!createdOrder) {
@@ -186,38 +235,21 @@ export function CartProvider({ children }: { children: ReactNode }) {
         order.referralCode = createdOrder.acceptedReferralCode;
       }
 
-      // Consommation de la récompense utilisée
-      if (input.rewardId) {
-        const rewardResult = await useReward(
-          input.rewardId,
-          createdOrder.data.id
+      if (
+        input.rewardId &&
+        input.loyaltyReward &&
+        input.customerId
+      ) {
+        const resetResult = await updateCustomerPoints(
+          input.customerId,
+          Math.min(500, order.pointsEarned)
         );
-
-        if (rewardResult.error) {
+      
+        if (resetResult.error) {
           console.error(
-            "Erreur consommation récompense :",
-            rewardResult.error
+            "Erreur réinitialisation pépites :",
+            resetResult.error
           );
-        }
-
-        // Une récompense fidélité termine le cycle :
-        // on repart avec uniquement les pépites gagnées par cette commande.
-        if (
-          !rewardResult.error &&
-          input.loyaltyReward &&
-          input.customerId
-        ) {
-          const resetResult = await updateCustomerPoints(
-            input.customerId,
-            Math.min(500, order.pointsEarned)
-          );
-
-          if (resetResult.error) {
-            console.error(
-              "Erreur réinitialisation pépites :",
-              resetResult.error
-            );
-          }
         }
       }
 
@@ -237,7 +269,13 @@ export function CartProvider({ children }: { children: ReactNode }) {
 
   const value = useMemo<CartContextValue>(() => {
     const count = items.reduce((s, i) => s + i.qty, 0);
-    const total = items.reduce((s, i) => s + i.qty * i.product.price, 0);
+    const total = items.reduce((s, i) => {
+      const addonsTotal =
+        i.addons?.reduce((sum, addon) => sum + Number(addon.price), 0) ?? 0;
+    
+      return s + i.qty * (Number(i.product.price) + addonsTotal);
+    }, 0);
+
     return {
       items,
       add,
