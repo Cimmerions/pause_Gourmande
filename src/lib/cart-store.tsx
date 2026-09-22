@@ -9,7 +9,7 @@ import {
 } from "react";
 import type { Product } from "./products";
 import { createOrder } from "./orders";
-import { updateCustomerPoints } from "./customers";
+import { useLoyaltyReward } from "./customers";
 
 export type CartAddon = {
   productId: string;
@@ -237,18 +237,18 @@ export function CartProvider({ children }: { children: ReactNode }) {
 
       if (
         input.rewardId &&
-        input.loyaltyReward &&
-        input.customerId
+        input.loyaltyReward
       ) {
-        const resetResult = await updateCustomerPoints(
-          input.customerId,
-          Math.min(500, order.pointsEarned)
+        const rewardResult = await useLoyaltyReward(
+          input.rewardId,
+          order.id,
+          order.phone
         );
       
-        if (resetResult.error) {
+        if (rewardResult.error) {
           console.error(
-            "Erreur réinitialisation pépites :",
-            resetResult.error
+            "Erreur utilisation récompense fidélité :",
+            rewardResult.error
           );
         }
       }

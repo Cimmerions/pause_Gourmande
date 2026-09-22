@@ -13,9 +13,9 @@ function generateReferralCode() {
 
 export async function findCustomer(phone: string) {
   const { data, error } = await supabase.rpc(
-    "find_customer_by_phone",
+    "get_customer_by_phone",
     {
-      customer_phone: phone,
+      p_phone: phone,
     }
   );
 
@@ -34,18 +34,15 @@ export async function createCustomer(
 ) {
   const referralCode = generateReferralCode();
 
-  const { data, error } = await supabase
-    .from("customers")
-    .insert({
-      name,
-      phone,
-      points: 0,
-      referral_code: referralCode,
-      referred_by: referredBy ?? null,
-      referral_reward_received: false,
-    })
-    .select()
-    .single();
+  const { data, error } = await supabase.rpc(
+    "create_customer_secure",
+    {
+      p_name: name,
+      p_phone: phone,
+      p_referred_by: referredBy ?? null,
+      p_referral_code: referralCode,
+    }
+  );
 
   if (error) {
     console.error(error);
@@ -73,12 +70,27 @@ export async function findCustomerByReferralCode(
   return data?.[0] ?? null;
 }
 
-export async function updateCustomerPoints(
-  id: number,
-  points: number
+export async function useLoyaltyReward(
+  rewardId: number,
+  orderId: string,
+  phone: string
 ) {
-  return await supabase
-    .from("customers")
-    .update({ points })
-    .eq("id", id);
+  const { data, error } = await supabase.rpc(
+    "use_loyalty_reward",
+    {
+      p_reward_id: rewardId,
+      p_order_id: orderId,
+      p_phone: phone,
+    }
+  );
+
+  if (error) {
+    console.error(
+      "Erreur utilisation récompense fidélité :",
+      error
+    );
+    return { data: null, error };
+  }
+
+  return { data, error: null };
 }

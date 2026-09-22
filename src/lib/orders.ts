@@ -195,22 +195,6 @@ export async function getOrders() {
     };
   }
   
-  export async function deleteOrder(id: string) {
-  const { data, error } = await supabase
-    .from("orders")
-    .delete()
-    .eq("id", id);
-
-  if (error) {
-    console.error("Erreur suppression commande :", error);
-  }
-
-  return {
-    data,
-    error,
-  };
-}
-  
   export function subscribeToNotifications(
     onNotification: (notification: Notification) => void
   ) {

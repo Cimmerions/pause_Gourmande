@@ -92,25 +92,6 @@ export async function getRewards(phone: string) {
   return data ?? [];
 }
 
-export async function useReward(
-  id: number,
-  orderId: string
-) {
-  const { data, error } = await supabase.rpc(
-    "use_customer_reward",
-    {
-      p_id: id,
-      p_order_id: orderId,
-    }
-  );
-
-  if (error) {
-    console.error("USE REWARD :", error);
-  }
-
-  return { data, error };
-}
-
 export async function hasActiveLoyaltyReward(phone: string) {
   const { data, error } = await supabase.rpc(
     "has_active_loyalty_reward",
