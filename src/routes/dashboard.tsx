@@ -106,6 +106,9 @@ function Dashboard() {
         ...order,
         customerName: order.customer_name,
         createdAt: new Date(order.created_at).getTime(),
+        rewardSource: order.reward_source ?? null,
+        rewardValue: order.reward_value ?? null,
+        rewardDiscount: order.reward_discount ?? null,
         lines: (order.order_items ?? []).map((item: any) => ({
           productId: item.product_id,
           name: item.name,
@@ -868,6 +871,28 @@ function OrderRow({
       </div>
       <div className="flex items-center gap-4 md:gap-6 md:justify-end">
         <div className="text-right">
+
+        {order.rewardValue ? (
+          <div className="mt-2 rounded-lg bg-amber-50 px-3 py-2 text-sm">
+            <div className="font-medium text-amber-700">
+              🎁 {order.rewardValue}
+              {order.rewardSource === "loyalty" && " — Récompense fidélité"}
+              {order.rewardSource === "wheel" && " — Roue cadeau"}
+              {order.rewardSource === "referral" && " — Parrainage"}
+            </div>
+
+            {order.rewardDiscount != null && (
+              <div className="text-xs text-amber-600">
+                Réduction : -{formatFCFA(order.rewardDiscount)}
+              </div>
+            )}
+          </div>
+        ) : (
+          <div className="mt-2 text-xs text-muted-foreground">
+              Aucune récompense utilisée
+          </div>
+        )}
+
           <p className="font-semibold">{formatFCFA(order.total)}</p>
           <p className="text-[11px] text-brand-gold font-medium">
             +{order.pointsEarned} pépites

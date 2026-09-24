@@ -47,6 +47,9 @@ export type Order = {
   pointsEarned: number;
   usedPoints: number;
   status: "pending" | "done" | "cancelled";
+  rewardSource?: string | null;
+  rewardValue?: string | null;
+  rewardDiscount?: number | null;
 };
 
 type SubmitInput = {

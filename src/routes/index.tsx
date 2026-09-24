@@ -4,13 +4,16 @@ import { Search, ShoppingCart, Heart, Sparkles, Copy, MapPin, Clock, LayoutDashb
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
-import {getProducts, formatFCFA, type Product} from "@/lib/products";
+import {getProducts, formatFCFA, type Product } from "@/lib/products";
 import { useCart } from "@/lib/cart-store";
 import { ProductCard } from "@/components/ProductCard";
 import { LuckyWheel } from "@/components/LuckyWheel";
 import { CartSheet } from "@/components/CartSheet";
 import { findCustomer } from "@/lib/customers";
-import { registerCustomerPushSubscription } from "@/lib/push";
+import {
+  registerCustomerPushSubscription,
+  getCustomerPushStatus,
+} from "@/lib/push";
 import { getActiveLocation, type Location } from "@/lib/locations";
 import { LocationMap } from "@/components/LocationMap.client";
 import { getLoyaltySettings } from "@/lib/loyalty";
@@ -53,6 +56,8 @@ function Home() {
   const [location, setLocation] = useState<Location | null>(null);
   const [nextRewardAt, setNextRewardAt] = useState(500);
   const [loyaltyReward, setLoyaltyReward] = useState("-10%");
+  const [pushStatus, setPushStatus] = useState<"disabled" | "enabled">("disabled");
+  const [enablingNotifications, setEnablingNotifications] = useState(false);
 
   useEffect(() => {
     async function loadHomeData() {
@@ -72,60 +77,67 @@ function Home() {
     loadHomeData();
   }, []);
 
-    async function checkLoyalty(phone: string) {
-      setLoyaltyPhone(phone);
-
-      if (phone.length !== 8) {
-        setPoints(0);
-        setReferralCode("");
-        return;
-      }
-
-      const customer = await findCustomer(phone);
-
-      if (!customer) {
-        setPoints(0);
-        setReferralCode("");
-
-        toast.info("Aucun espace fidélité trouvé pour ce numéro.");
-
-        return;
-      }
-
-      setPoints(customer.points ?? 0);
-      setReferralCode(customer.referral_code ?? "");
+  async function checkLoyalty(phone: string) {
+    setLoyaltyPhone(phone);
+  
+    if (phone.length !== 8) {
+      setPoints(0);
+      setReferralCode("");
+      setPushStatus("disabled");
+      return;
     }
+  
+    const [customer, currentPushStatus] = await Promise.all([
+      findCustomer(phone),
+      getCustomerPushStatus(phone),
+    ]);
+  
+    setPushStatus(
+      currentPushStatus === "enabled"
+        ? "enabled"
+        : "disabled"
+    );
+  
+    if (!customer) {
+      setPoints(0);
+      setReferralCode("");
+  
+      toast.info("Aucun espace fidélité trouvé pour ce numéro.");
+  
+      return;
+    }
+  
+    setPoints(customer.points ?? 0);
+    setReferralCode(customer.referral_code ?? "");
+  }
 
     async function enableCustomerNotifications() {
-      console.log("1️⃣ BOUTON NOTIFICATIONS CLIQUÉ");
-      console.log("2️⃣ loyaltyPhone =", loyaltyPhone);
-    
       if (loyaltyPhone.length !== 8) {
-        console.log("3️⃣ NUMÉRO INVALIDE");
         toast.error("Entrez d'abord votre numéro de téléphone.");
         return;
       }
     
+      if (pushStatus === "enabled") {
+        return;
+      }
+    
       try {
-        console.log("4️⃣ APPEL registerCustomerPushSubscription");
+        setEnablingNotifications(true);
     
         await registerCustomerPushSubscription(loyaltyPhone);
     
-        console.log("5️⃣ REGISTER PUSH TERMINÉ");
+        setPushStatus("enabled");
     
         toast.success("Notifications activées", {
           description:
             "Vous recevrez maintenant les notifications concernant vos commandes.",
         });
       } catch (error) {
-        console.error("6️⃣ ERREUR :", error);
+        console.error("Erreur activation notifications :", error);
     
-        toast.error("Impossible d'activer les notifications", {
-          description:
-            error instanceof Error
-              ? error.message
-              : "Une erreur est survenue.",
-        });
+        toast.error("Impossible d'activer les notifications.");
+      } finally {
+        setEnablingNotifications(false);
       }
     }
 
@@ -405,10 +417,15 @@ function Home() {
             {loyaltyPhone.length === 8 && (
               <Button
                 variant="outline"
+                disabled={enablingNotifications || pushStatus === "enabled"}
                 className="w-full mt-4 h-12 rounded-2xl"
                 onClick={enableCustomerNotifications}
               >
-                🔔 Recevoir les notifications de ma commande
+                {enablingNotifications
+                  ? "Activation…"
+                  : pushStatus === "enabled"
+                    ? "🔔 Notifications activées"
+                    : "🔔 Recevoir les notifications de ma commande"}
               </Button>
             )}
           </div>
