@@ -239,6 +239,8 @@ function Dashboard() {
       const {
         data: { user },
       } = await supabase.auth.getUser();
+
+      console.log("🔐 USER CONNECTÉ :", user);
   
       if (!user) {
         navigate({
@@ -252,6 +254,11 @@ function Dashboard() {
         .select("role")
         .eq("user_id", user.id)
         .maybeSingle();
+
+        console.log("👤 ADMIN :", {
+          admin,
+          error,
+        });
   
       if (error || !admin) {
         await supabase.auth.signOut();
