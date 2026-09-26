@@ -201,13 +201,7 @@ function Home() {
             >
               <Heart className="size-4" /> {points} pépites
             </a>
-            <Link
-              to="/dashboard"
-              className="hidden sm:inline-flex items-center gap-2 text-sm font-medium text-brand-deep/70 hover:text-brand-gold transition"
-            >
-              <LayoutDashboard className="size-4" />
-              <span className="hidden md:inline">Bord</span>
-            </Link>
+
             <CartSheet>
               <Button
                 variant="default"
@@ -613,14 +607,25 @@ function Home() {
       )}
 
       {/* Footer */}
-      <footer className="py-16 text-center border-t border-border">
-        <div className="size-12 bg-brand-gold/10 rounded-full mx-auto flex items-center justify-center text-brand-gold mb-4">
-          <Heart className="size-5 fill-current" />
-        </div>
-        <p className="text-sm font-medium text-muted-foreground">
-          © 2026 Pause Gourmande • Fait main avec passion à Lomé.
-        </p>
-      </footer>
-    </div>
-  );
-}
+      <footer className="py-16 border-t border-border">
+        <div className="max-w-7xl mx-auto px-4 text-center">
+          <div className="size-12 bg-brand-gold/10 rounded-full mx-auto flex items-center justify-center text-brand-gold mb-4">
+            <Heart className="size-5 fill-current" />
+          </div>
+
+          <p className="text-sm font-medium text-muted-foreground">
+            © 2026 Pause Gourmande • Fait main avec passion à Lomé.
+          </p>
+
+          <Link
+            to="/admin-login"
+            className="inline-flex items-center gap-2 mt-5 text-xs font-medium text-muted-foreground/60 hover:text-brand-gold transition"
+          >
+            <LayoutDashboard className="size-3.5" />
+              Espace équipe
+            </Link>
+          </div>
+        </footer>
+      </div>
+    );
+  }
