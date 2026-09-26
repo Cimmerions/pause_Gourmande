@@ -16,6 +16,7 @@ import {
   Clock,
   LogOut,
   RefreshCw,
+  Bell,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useCart, type Order } from "@/lib/cart-store";
@@ -374,11 +375,17 @@ function Dashboard() {
     <div className="min-h-screen bg-brand-cream text-foreground">
       {/* Header */}
       <header className="sticky top-0 z-40 bg-brand-cream/90 backdrop-blur-md border-b border-brand-gold/10">
-        <div className="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
-            <Button variant="ghost" size="sm" asChild className="rounded-full">
+        <div className="max-w-7xl mx-auto px-3 md:px-4 py-2 md:py-3 flex items-center justify-between gap-2 md:gap-4">
+          <div className="flex items-center gap-2 md:gap-3 min-w-0">
+            <Button
+              variant="ghost"
+              size="sm"
+              asChild
+              className="rounded-full px-2 md:px-3"
+            >
               <Link to="/">
-                <ArrowLeft className="size-4" /> Boutique
+                <ArrowLeft className="size-4" />
+                <span className="hidden sm:inline">Boutique</span>
               </Link>
             </Button>
             <div className="hidden md:block h-6 w-px bg-border" />
@@ -389,13 +396,13 @@ function Dashboard() {
               <p className="text-sm font-semibold">Pause Gourmande — Lomé</p>
             </div>
           </div>
-          <div className="flex flex-wrap gap-1 rounded-full bg-white ring-1 ring-border p-1">
+          <div className="flex gap-0.5 md:gap-1 rounded-full bg-white ring-1 ring-border p-0.5 md:p-1">
             {RANGES.map((r) => (
               <button
                 key={r.key}
                 onClick={() => setRange(r.key)}
                 className={
-                  "px-3 py-1.5 rounded-full text-xs font-semibold transition " +
+                  "px-2 md:px-3 py-1 md:py-1.5 rounded-full text-[10px] md:text-xs font-semibold transition " +
                   (range === r.key
                     ? "bg-brand-deep text-brand-cream"
                     : "text-muted-foreground hover:text-foreground")
@@ -439,31 +446,33 @@ function Dashboard() {
 
         <Button
           variant="outline"
+          size="sm"
+          className="rounded-full size-9 p-0 sm:w-auto sm:px-3"
           onClick={async () => {
             if (pushStatus === "enabled") {
               return;
             }
-          
+
             try {
               await registerPushSubscription();
-          
+
               setPushStatus("enabled");
-          
+
               toast.success("Notifications activées", {
                 description:
                   "Cet appareil recevra maintenant les notifications Push.",
-              });
-            } catch (error) {
-              console.error(
-                "Erreur activation Push :",
+                });
+              } catch (error) {
+                console.error(
+                  "Erreur activation Push :",
                 error
               );
-          
+
               const status = await getAdminPushStatus();
-              setPushStatus(status);
-          
-              toast.error(
-                "Impossible d'activer les notifications",
+                setPushStatus(status);
+
+                toast.error(
+                  "Impossible d'activer les notifications",
                 {
                   description:
                     error instanceof Error
@@ -474,11 +483,15 @@ function Dashboard() {
             }
           }}
         >
-          {pushStatus === "enabled"
-            ? "🔔 Notifications activées"
-            : pushStatus === "blocked"
-              ? "🔕 Notifications bloquées"
-              : "🔔 Activer les notifications"}
+          <Bell className="size-4" />
+
+          <span className="hidden sm:inline">
+            {pushStatus === "enabled"
+              ? "Notifications activées"
+              : pushStatus === "blocked"
+                ? "Notifications bloquées"
+                : "Activer les notifications"}
+          </span>
         </Button>
 
           <Button
@@ -494,7 +507,7 @@ function Dashboard() {
               }
             />
 
-            <span className="hidden sm:inline">
+            <span className="rounded-full size-9 sm:w-auto sm:px-3 flex items-center justify-center gap-2">
               Actualiser
             </span>
           </Button>
@@ -514,18 +527,18 @@ function Dashboard() {
             }}
           >
            <LogOut className="size-4" />
-           <span className="hidden sm:inline">
+           <span className="rounded-full size-9 sm:w-auto sm:px-3 flex items-center justify-center gap-2">
             Déconnexion
             </span>
           </Button>
 
         </div>
       </header>
-      <main className="max-w-7xl mx-auto px-4 py-10 space-y-10">
+      <main className="max-w-7xl mx-auto px-3 md:px-4 py-5 md:py-10 space-y-6 md:space-y-10 flex flex-col">
 
       {/* Localisation */}
       {location && (
-      <section className="bg-card rounded-[28px] p-6 ring-1 ring-border">
+      <section className="order-4 md:order-none bg-card rounded-[28px] p-6 ring-1 ring-border">
         <div className="mb-6">
           <h2 className="text-lg font-semibold">Localisation du jour</h2>
           <p className="text-xs text-muted-foreground">
@@ -564,7 +577,7 @@ function Dashboard() {
     )}
 
         {/* KPIs */}
-        <section className="grid grid-cols-2 lg:grid-cols-5 gap-4">
+        <section className="order-2 md:order-none grid grid-cols-2 lg:grid-cols-5 gap-3 md:gap-4">
           <KPI
             icon={<Wallet className="size-4" />}
             label="Chiffre d'affaires"
@@ -596,7 +609,7 @@ function Dashboard() {
 
         {/* Paramètres */}
         {settings && (
-          <section className="bg-card rounded-[28px] p-6 ring-1 ring-border">
+          <section className="order-5 md:order-none bg-card rounded-[28px] p-6 ring-1 ring-border">
             <div className="mb-6">
               <h2 className="text-lg font-semibold">
                 Paramètres de l'application
@@ -629,7 +642,7 @@ function Dashboard() {
         )}
 
         {/* Chart + product perf */}
-        <section className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <section className="order-3 md:order-none grid grid-cols-1 lg:grid-cols-3 gap-4 md:gap-6">
           <div className="bg-card rounded-[28px] p-6 ring-1 ring-border lg:col-span-2">
             <div className="flex items-center justify-between mb-6">
               <div>
@@ -696,7 +709,7 @@ function Dashboard() {
         </section>
 
         {/* Orders */}
-        <section className="bg-card rounded-[28px] ring-1 ring-border overflow-hidden">
+        <section className="order-1 md:order-none bg-card rounded-[28px] ring-1 ring-border overflow-hidden">
           <div className="p-6 border-b border-border flex items-center justify-between">
             <div>
               <h2 className="text-lg font-semibold">Commandes récentes</h2>
@@ -789,7 +802,7 @@ function KPI({
   return (
     <div
       className={
-        "rounded-[24px] p-5 ring-1 " +
+        "rounded-[20px] md:rounded-[24px] p-3 md:p-5 ring-1 " +
         (accent
           ? "bg-brand-deep text-brand-cream ring-brand-deep"
           : "bg-card ring-border")
@@ -804,7 +817,7 @@ function KPI({
         {icon}
         {label}
       </div>
-      <p className="text-2xl md:text-3xl font-semibold mt-3 tracking-tight">{value}</p>
+      <p className="text-xl md:text-3xl font-semibold mt-2 md:mt-3 tracking-tight">{value}</p>
       {hint && (
         <p
           className={
@@ -834,7 +847,7 @@ function OrderRow({
         ? "bg-rose-100 text-rose-700"
         : "bg-amber-100 text-amber-700";
   return (
-    <div className="p-5 flex flex-col md:flex-row md:items-center gap-4">
+    <div className="p-3 md:p-5 flex flex-col md:flex-row md:items-center gap-3 md:gap-4">
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2 flex-wrap">
           <span className="font-semibold truncate">{order.customerName}</span>
