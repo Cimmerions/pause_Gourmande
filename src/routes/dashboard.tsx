@@ -718,261 +718,362 @@ function Dashboard() {
       )}
     </div>
   </header>
-  <main className="max-w-7xl mx-auto px-3 sm:px-4 py-4 md:py-10 space-y-5 md:space-y-10">
+  <main className="max-w-7xl mx-auto px-3 sm:px-4 py-4 md:py-8 space-y-5 md:space-y-8">
 
-      {/* Localisation */}
-      {location && (
-      <section className="bg-card rounded-[28px] p-6 ring-1 ring-border">
-        <div className="mb-6">
-          <h2 className="text-lg font-semibold">Localisation du jour</h2>
-          <p className="text-xs text-muted-foreground">
-           Modifiez ici l'emplacement visible par les clients.
-          </p>
+
+  {/* INDICATEURS */}
+  <section>
+    <div className="mb-3 md:mb-4">
+      <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-brand-gold">
+        Vue d'ensemble
+      </p>
+
+      <h2 className="text-lg md:text-xl font-semibold">
+        Activité commerciale
+      </h2>
+    </div>
+
+    <div className="grid grid-cols-2 lg:grid-cols-5 gap-2.5 md:gap-4">
+
+      <KPI
+        icon={<Wallet className="size-4" />}
+        label="Chiffre d'affaires"
+        value={formatFCFA(stats.revenue)}
+        accent
+      />
+
+      <KPI
+        icon={<ShoppingBag className="size-4" />}
+        label="Commandes"
+        value={String(stats.count)}
+      />
+
+      <KPI
+        icon={<TrendingUp className="size-4" />}
+        label="Panier moyen"
+        value={formatFCFA(stats.avg)}
+      />
+
+      <KPI
+        icon={<ShoppingBag className="size-4" />}
+        label="Articles vendus"
+        value={String(stats.items)}
+      />
+
+      <KPI
+        icon={<Sparkles className="size-4" />}
+        label="Pépites"
+        value={String(stats.pointsGiven)}
+        hint={`Solde client : ${points}`}
+      />
+
+    </div>
+  </section>
+
+
+  {/* PERFORMANCES */}
+  <section>
+    <div className="mb-3 md:mb-4">
+      <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-brand-gold">
+        Analyse
+      </p>
+
+      <h2 className="text-lg md:text-xl font-semibold">
+        Performances
+      </h2>
+    </div>
+
+    <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 md:gap-6">
+
+      {/* Graphique */}
+      <div className="bg-card rounded-[24px] md:rounded-[28px] p-4 md:p-6 ring-1 ring-border lg:col-span-2">
+
+        <div className="flex items-center justify-between mb-5 md:mb-6">
+          <div>
+            <h3 className="text-base md:text-lg font-semibold">
+              Ventes des 7 derniers jours
+            </h3>
+
+            <p className="text-xs text-muted-foreground mt-0.5">
+              Chiffre d'affaires journalier
+            </p>
+          </div>
         </div>
 
-      {location ? (
-          <LocationEditor
-            location={location}
-            saving={savingLocation}
-            onSave={async (values) => {
-              setSavingLocation(true);
+        <div className="flex items-end gap-1.5 sm:gap-3 h-40 md:h-56">
 
-              const updated = await updateLocation(
-                location.id,
-                values
-              );
+          {daily.map((d) => {
+            const h =
+              d.total > 0
+                ? Math.max(
+                    8,
+                    Math.round((d.total / maxDaily) * 100)
+                  )
+                : 2;
 
-              if (updated) {
-                setLocation(updated);
-                toast.success("Localisation mise à jour.");
-              } else {
-                toast.error("Impossible de mettre à jour la localisation.");
-              }
-
-              setSavingLocation(false);
-            }}
-          />
-        ) : (
-          <p className="text-sm text-muted-foreground">
-            Aucune localisation active.
-          </p>
-        )}
-      </section>
-    )}
-
-        {/* KPIs */}
-        <section className="grid grid-cols-1 lg:grid-cols-3 gap-4 md:gap-6">
-          <KPI
-            icon={<Wallet className="size-4" />}
-            label="Chiffre d'affaires"
-            value={formatFCFA(stats.revenue)}
-            accent
-          />
-
-          <KPI
-            icon={<ShoppingBag className="size-4" />}
-            label="Commandes"
-            value={String(stats.count)}
-          />
- 
-          <KPI
-            icon={<TrendingUp className="size-4" />}
-            label="Panier moyen"
-            value={formatFCFA(stats.avg)}
-          />
-
-          <KPI
-           icon={<ShoppingBag className="size-4" />}
-           label="Articles vendus"
-           value={String(stats.items)}
-          />
-
-          <KPI
-            icon={<Sparkles className="size-4" />}
-            label="Pépites"
-            value={String(stats.pointsGiven)}
-            hint={`Solde client : ${points}`}
-          />
-        </section>
-
-        {/* Paramètres */}
-        {settings && (
-          <section className="bg-card rounded-[24px] md:rounded-[28px] ring-1 ring-border overflow-hidden">
-            <div className="p-4 md:p-6 border-b border-border flex items-center justify-between">
-              <div>
-                <h2 className="text-base md:text-lg font-semibold">
-                  Commandes récentes
-                </h2>
-
-                <p className="text-xs text-muted-foreground mt-0.5">
-                  {filtered.length} commande
-                  {filtered.length > 1 ? "s" : ""} sur la période
-                </p>
-              </div>
-            </div>
-
-            <SettingsEditor
-              settings={settings}
-              saving={savingSettings}
-              onSave={async (values) => {
-                setSavingSettings(true);
-
-                const updated = await updateAppSettings(values);
-
-                if (updated) {
-                  setSettings(updated);
-                  toast.success("Paramètres mis à jour.");
-                } else {
-                  toast.error("Impossible de mettre à jour les paramètres.");
-                }
-
-                setSavingSettings(false);
-              }}
-            />
-          </section>
-        )}
-
-        {/* Chart + product perf */}
-        <section className="grid grid-cols-1 lg:grid-cols-3 gap-4 md:gap-6">
-          <div className="bg-card rounded-[28px] p-6 ring-1 ring-border lg:col-span-2">
-            <div className="flex items-center justify-between mb-6">
-              <div>
-                <h2 className="text-lg font-semibold">Ventes des 7 derniers jours</h2>
-                <p className="text-xs text-muted-foreground">Chiffre d'affaires journalier</p>
-              </div>
-            </div>
-            <div className="flex items-end gap-1.5 sm:gap-3 h-40 md:h-56">
-              {daily.map((d) => {
-                const h =
-                  d.total > 0
-                    ? Math.max(8, Math.round((d.total / maxDaily) * 100))
-                    : 2;
-
-                return (
+            return (
+              <div
+                key={d.label}
+                className="flex-1 flex flex-col items-center gap-2 h-full"
+              >
+                <div className="w-full flex-1 flex items-end">
                   <div
-                    key={d.label}
-                    className="flex-1 flex flex-col items-center gap-2 h-full"
-                  >
-                    <div className="w-full flex-1 flex items-end">
-                      <div
-                        className="w-full rounded-t-xl bg-brand-gold transition-all duration-500"
-                        style={{ height: `${h}%` }}
-                        title={`${formatFCFA(d.total)}`}
-                      />
-                    </div>
+                    className="w-full rounded-t-xl bg-brand-gold transition-all duration-500"
+                    style={{ height: `${h}%` }}
+                    title={formatFCFA(d.total)}
+                  />
+                </div>
 
-                    <span className="text-[10px] font-medium text-muted-foreground capitalize">
-                      {d.label}
-                    </span>
-                  </div>
-                );
-              })}
-            </div>
+                <span className="text-[10px] font-medium text-muted-foreground capitalize">
+                  {d.label}
+                </span>
+              </div>
+            );
+          })}
+
+        </div>
+      </div>
+
+
+      {/* Top produits */}
+      <div className="bg-card rounded-[24px] md:rounded-[28px] p-4 md:p-6 ring-1 ring-border">
+
+        <h3 className="text-base md:text-lg font-semibold">
+          Top produits
+        </h3>
+
+        <p className="text-xs text-muted-foreground mt-0.5 mb-5">
+          Sur la période sélectionnée
+        </p>
+
+        <div className="space-y-4">
+
+          {perProduct.slice(0, 6).map((p) => {
+            const pct = Math.round(
+              (p.revenue / maxRev) * 100
+            );
+
+            return (
+              <div key={p.name}>
+
+                <div className="flex justify-between text-sm mb-1.5 gap-2">
+                  <span className="font-medium truncate">
+                    {p.name}
+                  </span>
+
+                  <span className="text-brand-gold font-semibold whitespace-nowrap text-xs">
+                    {p.qty} × · {formatFCFA(p.revenue)}
+                  </span>
+                </div>
+
+                <div className="w-full h-2 bg-brand-warm rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-brand-gold rounded-full transition-all"
+                    style={{ width: `${pct}%` }}
+                  />
+                </div>
+
+              </div>
+            );
+          })}
+
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+  {/* COMMANDES — PRIORITÉ */}
+  <section className="bg-card rounded-[24px] md:rounded-[28px] ring-1 ring-border overflow-hidden">
+
+<div className="p-4 md:p-6 border-b border-border flex items-center justify-between gap-3">
+  <div>
+    <div className="flex items-center gap-2">
+      <ShoppingBag className="size-5 text-brand-gold" />
+
+      <h2 className="text-base md:text-lg font-semibold">
+        Commandes récentes
+      </h2>
+    </div>
+
+    <p className="text-xs text-muted-foreground mt-1">
+      {filtered.length} commande
+      {filtered.length > 1 ? "s" : ""} sur la période
+    </p>
+  </div>
+</div>
+
+{filtered.length === 0 ? (
+  <div className="p-10 md:p-12 text-center text-sm text-muted-foreground">
+    Aucune commande sur cette période.
+    <br />
+    Les commandes passées depuis la boutique apparaîtront ici.
+  </div>
+) : (
+  <div className="divide-y divide-border">
+    {filtered.slice(0, 25).map((o) => (
+      <OrderRow
+        key={o.id}
+        order={o}
+        onStatus={async (id, status) => {
+          const result = await updateOrderStatus(id, status);
+
+          if (result.error) {
+            console.error(
+              "ERREUR CHANGEMENT STATUT :",
+              result.error
+            );
+
+            toast.error(
+              status === "cancelled"
+                ? "Impossible d'annuler la commande."
+                : "Impossible de valider la commande.",
+              {
+                description: result.error.message,
+              }
+            );
+
+            return;
+          }
+
+          toast.success(
+            status === "cancelled"
+              ? "Commande annulée."
+              : "Commande validée."
+          );
+
+          const updated = await getOrders();
+
+          setOrders(
+            updated.map((order: any) => ({
+              ...order,
+              customerName: order.customer_name,
+              createdAt: new Date(order.created_at).getTime(),
+              rewardSource: order.reward_source ?? null,
+              rewardValue: order.reward_value ?? null,
+              rewardDiscount: order.reward_discount ?? null,
+              lines: (order.order_items ?? []).map((item: any) => ({
+                productId: item.product_id,
+                name: item.name,
+                qty: item.quantity,
+                price: item.price,
+                category: "",
+                note: item.note ?? undefined,
+              })),
+              pointsEarned: Math.floor(order.total / 100),
+            }))
+          );
+        }}
+      />
+    ))}
+  </div>
+)}
+</section>
+
+
+  {/* GESTION DU POINT DE VENTE */}
+  {location && (
+    <section>
+
+      <div className="mb-3 md:mb-4">
+        <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-brand-gold">
+          Gestion
+        </p>
+
+        <h2 className="text-lg md:text-xl font-semibold">
+          Point de vente
+        </h2>
+
+        <p className="text-xs text-muted-foreground mt-0.5">
+          Gérez les informations visibles par vos clients.
+        </p>
+      </div>
+
+      <div className="bg-card rounded-[24px] md:rounded-[28px] p-4 md:p-6 ring-1 ring-border">
+
+        <LocationEditor
+          location={location}
+          saving={savingLocation}
+          onSave={async (values) => {
+            setSavingLocation(true);
+
+            const updated = await updateLocation(
+              location.id,
+              values
+            );
+
+            if (updated) {
+              setLocation(updated);
+              toast.success("Localisation mise à jour.");
+            } else {
+              toast.error(
+                "Impossible de mettre à jour la localisation."
+              );
+            }
+
+            setSavingLocation(false);
+          }}
+        />
+
+      </div>
+    </section>
+  )}
+
+
+  {/* PARAMÈTRES */}
+  {settings && (
+    <section>
+
+      <div className="mb-3 md:mb-4">
+        <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-brand-gold">
+          Configuration
+        </p>
+
+        <div className="flex items-center gap-2">
+          <div className="size-9 rounded-xl bg-brand-deep text-brand-gold flex items-center justify-center">
+            <Sparkles className="size-4" />
           </div>
 
-          <div className="bg-card rounded-[28px] p-6 ring-1 ring-border">
-            <h2 className="text-lg font-semibold mb-1">Top produits</h2>
-            <p className="text-xs text-muted-foreground mb-5">
-              Sur la période sélectionnée
+          <div>
+            <h2 className="text-lg md:text-xl font-semibold">
+              Paramètres
+            </h2>
+
+            <p className="text-xs text-muted-foreground">
+              Fidélité, roue de la chance et parrainage.
             </p>
-            <div className="space-y-4">
-              {perProduct.slice(0, 6).map((p) => {
-                const pct = Math.round((p.revenue / maxRev) * 100);
-                return (
-                  <div key={p.name}>
-                    <div className="flex justify-between text-sm mb-1.5">
-                      <span className="font-medium truncate pr-2">{p.name}</span>
-                      <span className="text-brand-gold font-semibold whitespace-nowrap">
-                        {p.qty} × · {formatFCFA(p.revenue)}
-                      </span>
-                    </div>
-                    <div className="w-full h-2 bg-brand-warm rounded-full overflow-hidden">
-                      <div
-                        className="h-full bg-brand-gold rounded-full transition-all"
-                        style={{ width: `${pct}%` }}
-                      />
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
           </div>
-        </section>
+        </div>
+      </div>
 
-        {/* Orders */}
-        <section className="bg-card rounded-[28px] ring-1 ring-border overflow-hidden">
-          <div className="p-6 border-b border-border flex items-center justify-between">
-            <div>
-              <h2 className="text-lg font-semibold">Commandes récentes</h2>
-              <p className="text-xs text-muted-foreground">
-                {filtered.length} commande{filtered.length > 1 ? "s" : ""} sur la période
-              </p>
-            </div>
-          </div>
-          {filtered.length === 0 ? (
-            <div className="p-12 text-center text-sm text-muted-foreground">
-              Aucune commande sur cette période. Les commandes passées depuis la boutique
-              apparaîtront ici.
-            </div>
-          ) : (
-            <div className="divide-y divide-border">
-              {filtered.slice(0, 25).map((o) => (
-                <OrderRow
-                key={o.id}
-                order={o}
-                onStatus={async (id, status) => {
-                  const result = await updateOrderStatus(id, status);
-                
-                  if (result.error) {
-                    console.error(
-                      "ERREUR CHANGEMENT STATUT :",
-                      result.error
-                    );
-                
-                    toast.error(
-                      status === "cancelled"
-                        ? "Impossible d'annuler la commande."
-                        : "Impossible de valider la commande.",
-                      {
-                        description: result.error.message,
-                      }
-                    );
-                
-                    return;
-                  }
-                
-                  toast.success(
-                    status === "cancelled"
-                      ? "Commande annulée."
-                      : "Commande validée."
-                  );
-                
-                  const updated = await getOrders();
-                
-                  setOrders(
-                    updated.map((order: any) => ({
-                      ...order,
-                      customerName: order.customer_name,
-                      createdAt: new Date(order.created_at).getTime(),
-                      lines: (order.order_items ?? []).map((item: any) => ({
-                        productId: item.product_id,
-                        name: item.name,
-                        qty: item.quantity,
-                        price: item.price,
-                        category: "",
-                        note: item.note ?? undefined,
-                      })),
-                      pointsEarned: Math.floor(order.total / 100),
-                    }))
-                  );
-                }}
-                
-              />
-              ))}
-            </div>
-          )}
-        </section>
-      </main>
+      <div className="bg-card rounded-[24px] md:rounded-[28px] ring-1 ring-border overflow-hidden">
+
+        <SettingsEditor
+          settings={settings}
+          saving={savingSettings}
+          onSave={async (values) => {
+            setSavingSettings(true);
+
+            const updated = await updateAppSettings(values);
+
+            if (updated) {
+              setSettings(updated);
+              toast.success("Paramètres mis à jour.");
+            } else {
+              toast.error(
+                "Impossible de mettre à jour les paramètres."
+              );
+            }
+
+            setSavingSettings(false);
+          }}
+        />
+
+      </div>
+    </section>
+  )}
+
+</main>
     </div>
   );
 }
@@ -1041,161 +1142,263 @@ function OrderRow({
   order: Order;
   onStatus: (id: string, status: Order["status"]) => void;
 }) {
-  const date = new Date(order.createdAt);
+  const statusConfig = {
+    pending: {
+      label: "En attente",
+      className: "bg-amber-100 text-amber-700",
+    },
+    done: {
+      label: "Livrée",
+      className: "bg-emerald-100 text-emerald-700",
+    },
+    cancelled: {
+      label: "Annulée",
+      className: "bg-rose-100 text-rose-700",
+    },
+  } as const;
 
-  const badge =
-    order.status === "done"
-      ? "bg-emerald-100 text-emerald-700"
-      : order.status === "cancelled"
-        ? "bg-rose-100 text-rose-700"
-        : "bg-amber-100 text-amber-700";
+  const status = statusConfig[order.status];
 
-  const notes = order.lines
-    .flatMap((line) => {
-      if (!line.note) return [];
-      return [line.note];
-    })
-    .filter(Boolean);
+  const orderDate = new Date(order.createdAt);
+
+  const formattedOrderDate = orderDate.toLocaleDateString("fr-FR", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  });
+
+  const formattedOrderTime = orderDate.toLocaleTimeString("fr-FR", {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+
+  const plannedLabel =
+    order.mode === "today"
+      ? "Pour aujourd'hui"
+      : "Pour demain";
+
+  const subtotal = order.lines.reduce(
+    (sum, line) => sum + line.price * line.qty,
+    0
+  );
+
+  const hasDiscount =
+    order.rewardDiscount != null && order.rewardDiscount > 0;
 
   return (
-    <article className="p-4 md:p-5">
-      <div className="rounded-2xl md:rounded-3xl bg-background ring-1 ring-border p-4 md:p-5">
+    <article className="px-3 py-1.5 md:px-4 md:py-2">
+      <div className="group rounded-2xl bg-card ring-1 ring-border transition-shadow hover:shadow-sm">
 
-        {/* Client + statut */}
-        <div className="flex items-start justify-between gap-3">
+        {/* CLIENT + HORAIRES */}
+        <div className="px-4 pt-3.5 md:px-5 md:pt-4">
 
-          <div className="min-w-0">
-            <div className="flex items-center gap-2 flex-wrap">
-              <span className="font-semibold truncate">
-                {order.customerName}
-              </span>
+          <div className="flex items-start justify-between gap-3">
 
-              <span className="text-xs text-muted-foreground">
-                · {order.phone}
-              </span>
-            </div>
+            <div className="min-w-0 flex-1">
 
-            <div className="mt-1.5 flex items-center gap-1.5 text-xs text-muted-foreground">
-              <Clock className="size-3.5 shrink-0" />
+              <div className="flex items-center gap-2 min-w-0">
+                <h3 className="truncate text-sm md:text-[15px] font-semibold tracking-tight">
+                  {order.customerName}
+                </h3>
 
-              <span>
-                {order.mode === "today"
-                  ? "Aujourd'hui"
-                  : "Demain"}{" "}
-                · {order.time}
-              </span>
-            </div>
-          </div>
+                <span
+                  className={
+                    "shrink-0 rounded-full px-2 py-1 text-[8px] font-bold uppercase tracking-[0.06em] " +
+                    status.className
+                  }
+                >
+                  {status.label}
+                </span>
+              </div>
 
-          <span
-            className={
-              "shrink-0 text-[9px] md:text-[10px] font-bold uppercase px-2.5 py-1 rounded-full " +
-              badge
-            }
-          >
-            {order.status === "done"
-              ? "Livrée"
-              : order.status === "cancelled"
-                ? "Annulée"
-                : "En attente"}
-          </span>
-        </div>
-
-        {/* Date de commande — secondaire */}
-        <p className="hidden md:flex items-center gap-1.5 text-[11px] text-muted-foreground mt-3">
-          Commandée le{" "}
-          {date.toLocaleString("fr-FR", {
-            day: "2-digit",
-            month: "short",
-            hour: "2-digit",
-            minute: "2-digit",
-          })}
-        </p>
-
-        {/* Produits */}
-        <div className="mt-4 space-y-1.5 text-sm">
-          {order.lines.map((line, index) => (
-            <div
-              key={`${line.productId}-${index}`}
-              className="min-w-0"
-            >
-              <p className="font-medium leading-snug">
-                {line.qty}× {line.name}
+              <p className="mt-0.5 text-[11px] text-muted-foreground">
+                {order.phone}
               </p>
 
-              {line.note && (
-                <p className="text-xs text-amber-700 ml-4 mt-0.5">
-                  + {line.note}
-                </p>
-              )}
             </div>
-          ))}
+
+          </div>
+
+          {/* Horaires */}
+          <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1.5">
+
+            <div className="inline-flex items-center gap-1.5 text-[10px] text-muted-foreground">
+              <Clock className="size-3 text-brand-gold" />
+
+              <span>
+                Commandée le{" "}
+                <span className="font-medium text-foreground">
+                  {formattedOrderDate}
+                </span>
+                {" à "}
+                <span className="font-medium text-foreground">
+                  {formattedOrderTime}
+                </span>
+              </span>
+            </div>
+
+            <span className="hidden sm:block h-3 w-px bg-border" />
+
+            <div className="inline-flex items-center rounded-lg bg-brand-cream/60 px-2 py-1 text-[10px] font-semibold text-brand-deep">
+              {plannedLabel}
+              <span className="ml-1">
+                à {order.time}
+              </span>
+            </div>
+
+          </div>
         </div>
 
-        {/* Résumé + actions */}
-        <div className="mt-4 pt-4 border-t border-border flex items-end justify-between gap-3">
+        {/* PRODUITS */}
+        <div className="px-4 pt-3.5 md:px-5 md:pt-4">
 
-          {/* Récompense */}
-          <div className="min-w-0 flex-1">
-            {order.rewardValue && (
-              <div className="rounded-xl bg-amber-50 px-3 py-2">
-                <div className="font-medium text-xs text-amber-700 truncate">
-                  🎁 {order.rewardValue}
+          <div className="rounded-xl bg-muted/30 overflow-hidden">
+
+            <div className="flex items-center justify-between px-3 py-2 border-b border-border/60">
+              <span className="text-[9px] font-bold uppercase tracking-wider text-muted-foreground">
+                Produits
+              </span>
+
+              <span className="text-[9px] font-bold uppercase tracking-wider text-muted-foreground">
+                Prix
+              </span>
+            </div>
+
+            <div className="px-3 py-2.5 md:px-3.5 md:py-3">
+
+              <div className="space-y-2.5">
+
+                {order.lines.map((line, index) => (
+                  <div
+                    key={`${line.productId}-${index}`}
+                    className="flex items-start justify-between gap-4"
+                  >
+
+                    <div className="min-w-0 flex-1">
+
+                      <div className="flex items-baseline gap-2">
+
+                        <span className="shrink-0 text-xs font-bold text-brand-deep">
+                          {line.qty}×
+                        </span>
+
+                        <span className="min-w-0 text-xs md:text-sm font-medium leading-tight">
+                          {line.name}
+                        </span>
+
+                      </div>
+
+                      {line.note && (
+                        <p className="ml-5 mt-0.5 text-[10px] text-amber-700">
+                          {line.note}
+                        </p>
+                      )}
+
+                    </div>
+
+                    <span className="shrink-0 pt-0.5 text-xs md:text-sm font-semibold">
+                      {formatFCFA(line.price * line.qty)}
+                    </span>
+
+                  </div>
+                ))}
+
+              </div>
+
+            </div>
+
+          </div>
+        </div>
+
+        {/* RÉCAPITULATIF FINANCIER */}
+        <div className="px-4 pt-3 md:px-5 md:pt-3.5">
+
+          <div className="rounded-xl bg-brand-deep px-3.5 py-3 md:px-4 md:py-3.5 text-brand-cream">
+
+            <div className="space-y-1.5">
+
+              {/* Sous-total */}
+              <div className="flex items-center justify-between gap-4">
+                <span className="text-[10px] text-brand-cream/65">
+                  Sous-total
+                </span>
+
+                <span className="text-xs font-medium">
+                  {formatFCFA(subtotal)}
+                </span>
+              </div>
+
+              {/* Récompense / réduction */}
+              {hasDiscount && (
+                <div className="flex items-center justify-between gap-4">
+                  <span className="min-w-0 truncate text-[10px] text-brand-cream/80">
+                    {order.rewardValue
+                       ? `Réduction fidélité 🎁 ${order.rewardValue}`
+                       : "Réduction 🎁"}
+                  </span>
+
+                  <span className="shrink-0 text-xs font-semibold text-brand-gold">
+                      −{formatFCFA(order.rewardDiscount!)}
+                  </span>
+                </div>
+              )}
+
+              {/* Total */}
+              <div className="mt-2 flex items-end justify-between gap-4 border-t border-brand-cream/15 pt-2">
+
+                <div>
+                  <p className="text-[9px] uppercase tracking-wider text-brand-cream/60">
+                    Total à payer
+                  </p>
+
+                  <p className="mt-0.5 text-[10px] font-medium text-brand-gold">
+                    +{order.pointsEarned} pépites
+                  </p>
                 </div>
 
-                {order.rewardDiscount != null && (
-                  <div className="text-[11px] text-amber-600 mt-0.5">
-                    Réduction : -{formatFCFA(order.rewardDiscount)}
-                  </div>
-                )}
+                <p className="text-lg md:text-xl font-bold leading-none">
+                  {formatFCFA(order.total)}
+                </p>
+
               </div>
-            )}
+
+            </div>
+
           </div>
 
-          {/* Prix + pépites */}
-          <div className="text-right shrink-0">
-            <p className="font-bold text-base md:text-lg">
-              {formatFCFA(order.total)}
-            </p>
-
-            <p className="text-[11px] text-brand-gold font-medium">
-              +{order.pointsEarned} pépites
-            </p>
-          </div>
         </div>
 
-        {/* Actions */}
-          <div className="mt-4 flex justify-end gap-2">
+        {/* ACTIONS */}
+        <div className="flex justify-end px-4 py-2 md:px-5 md:py-2.5">
+  <div className="flex items-center gap-1.5">
+    {order.status !== "done" && (
+      <Button
+        size="icon"
+        variant="ghost"
+        className="size-9 rounded-full bg-emerald-50 hover:bg-emerald-100"
+        onClick={() => onStatus(order.id, "done")}
+        aria-label="Marquer comme livrée"
+      >
+        <Check className="size-4.5 text-emerald-600" />
+      </Button>
+    )}
 
-            {order.status !== "done" && (
-              <Button
-                size="icon"
-                variant="outline"
-                className="size-10 rounded-full bg-white"
-                onClick={() =>
-                  onStatus(order.id, "done")
-                }
-                aria-label="Marquer livrée"
-              >
-                <Check className="size-4 text-emerald-600" />
-              </Button>
-            )}
+    {order.status !== "cancelled" && (
+      <Button
+        size="icon"
+        variant="ghost"
+        className="size-9 rounded-full bg-rose-50 hover:bg-rose-100"
+        onClick={() =>
+          onStatus(order.id, "cancelled")
+        }
+        aria-label="Annuler la commande"
+      >
+        <Trash2 className="size-4.5 text-rose-500" />
+      </Button>
+    )}
+  </div>
+</div>
 
-            {order.status !== "cancelled" && (
-              <Button
-                size="icon"
-                variant="outline"
-                className="size-10 rounded-full bg-white"
-                onClick={() =>
-                  onStatus(order.id, "cancelled")
-                }
-                aria-label="Annuler"
-              >
-                <Trash2 className="size-4 text-rose-500" />
-              </Button>
-            )}
-            
-        </div>
       </div>
     </article>
   );
@@ -1502,99 +1705,123 @@ function SettingsEditor({
   }
 
   return (
-    <div className="space-y-8">
-
+    <div className="space-y-5">
+  
       {/* FIDÉLITÉ */}
-      <div>
-        <div className="mb-4">
-          <h3 className="font-semibold">
-            Fidélité
-          </h3>
-
-          <p className="text-xs text-muted-foreground">
-            Définissez le nombre de pépites nécessaire
-            pour débloquer une récompense.
-          </p>
+      <div className="rounded-2xl border bg-card p-4 md:p-5">
+        <div className="mb-5 flex items-start gap-3">
+          <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-brand-gold/15 text-lg">
+            🎁
+          </div>
+  
+          <div className="min-w-0">
+            <h3 className="font-semibold text-brand-deep">
+              Fidélité
+            </h3>
+  
+            <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+              Définissez le nombre de pépites nécessaire
+              pour débloquer une récompense.
+            </p>
+          </div>
         </div>
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-
-          <div className="space-y-1">
-            <label className="text-xs font-medium">
+  
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+  
+          <div className="space-y-1.5">
+            <label className="text-xs font-semibold">
               Seuil de récompense
             </label>
-
+  
             <input
               type="number"
               min="1"
               value={threshold}
               onChange={(e) =>
-                setThreshold(
-                  Number(e.target.value)
-                )
+                setThreshold(Number(e.target.value))
               }
-              className="w-full h-11 rounded-xl border bg-background px-4 text-sm"
+              className="h-11 w-full rounded-xl border bg-background px-4 text-sm outline-none transition focus:border-brand-gold focus:ring-2 focus:ring-brand-gold/20"
             />
+  
+            <p className="text-[10px] text-muted-foreground">
+              Nombre de pépites à atteindre
+            </p>
           </div>
-
-          <div className="space-y-1">
-            <label className="text-xs font-medium">
-              Réduction fidélité (%)
+  
+          <div className="space-y-1.5">
+            <label className="text-xs font-semibold">
+              Réduction fidélité
             </label>
-
-            <input
-              type="number"
-              min="1"
-              max="100"
-              value={reward
-                .replace("%", "")
-                .replace("-", "")}
-              onChange={(e) => {
-                const value = Math.max(
-                  1,
-                  Math.min(
-                    100,
-                    Number(e.target.value)
-                  )
-                );
-
-                setReward(`-${value}%`);
-              }}
-              className="w-full h-11 rounded-xl border bg-background px-4 text-sm"
-            />
+  
+            <div className="relative">
+              <input
+                type="number"
+                min="1"
+                max="100"
+                value={reward
+                  .replace("%", "")
+                  .replace("-", "")}
+                onChange={(e) => {
+                  const value = Math.max(
+                    1,
+                    Math.min(
+                      100,
+                      Number(e.target.value)
+                    )
+                  );
+  
+                  setReward(`-${value}%`);
+                }}
+                className="h-11 w-full rounded-xl border bg-background px-4 pr-10 text-sm outline-none transition focus:border-brand-gold focus:ring-2 focus:ring-brand-gold/20"
+              />
+  
+              <span className="absolute right-4 top-1/2 -translate-y-1/2 text-sm font-medium text-muted-foreground">
+                %
+              </span>
+            </div>
+  
+            <p className="text-[10px] text-muted-foreground">
+              Réduction accordée avec la récompense
+            </p>
           </div>
-
+  
         </div>
       </div>
-
-
+  
+  
       {/* ROUE */}
-      <div>
-        <div className="mb-4">
-          <h3 className="font-semibold">
-            Roue de la chance
-          </h3>
-
-          <p className="text-xs text-muted-foreground">
-            Les poids déterminent les probabilités
-            relatives de chaque case.
-          </p>
+      <div className="rounded-2xl border bg-card p-4 md:p-5">
+  
+        <div className="mb-5 flex items-start gap-3">
+          <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-brand-gold/15 text-lg">
+            🎡
+          </div>
+  
+          <div className="min-w-0">
+            <h3 className="font-semibold text-brand-deep">
+              Roue de la chance
+            </h3>
+  
+            <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+              Ajustez les probabilités de chaque récompense
+              disponible sur la roue.
+            </p>
+          </div>
         </div>
-
-        <div className="space-y-3">
-
+  
+        <div className="space-y-2">
+  
           {prizes.map((prize, index) => (
             <div
               key={`${prize.label}-${index}`}
-              className="flex items-center gap-3"
+              className="flex items-center gap-3 rounded-xl bg-muted/40 px-3 py-2.5"
             >
-
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium truncate">
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-sm font-medium">
                   {prize.label.trim()}
                 </p>
               </div>
-
+  
               <input
                 type="number"
                 min="0"
@@ -1606,117 +1833,121 @@ function SettingsEditor({
                     Number(e.target.value)
                   )
                 }
-                className="w-20 h-10 rounded-xl border bg-background px-3 text-sm text-center"
+                className="h-9 w-16 shrink-0 rounded-lg border bg-background px-2 text-center text-sm outline-none transition focus:border-brand-gold focus:ring-2 focus:ring-brand-gold/20"
               />
-
-              <span className="text-xs text-muted-foreground w-6">
+  
+              <span className="w-4 shrink-0 text-xs font-medium text-muted-foreground">
                 %
               </span>
-
             </div>
           ))}
-
+  
         </div>
-
+  
         <div
           className={
-            "mt-4 rounded-xl p-3 text-sm font-medium " +
+            "mt-4 flex items-center justify-between rounded-xl px-3 py-3 text-xs font-semibold " +
             (totalWeight === 100
               ? "bg-emerald-50 text-emerald-700"
               : "bg-amber-50 text-amber-700")
           }
         >
-          Total des probabilités : {totalWeight} %
+          <span>Total des probabilités</span>
+          <span>{totalWeight} %</span>
         </div>
+  
       </div>
-
-
+  
+  
       {/* SURPRISES DE PARRAINAGE */}
-      <div>
-
-        <div className="mb-4">
-          <h3 className="font-semibold">
-            🎁 Surprise Gourmande
-          </h3>
-
-          <p className="text-xs text-muted-foreground">
-            Définissez les récompenses offertes au
-            parrain après la première commande de son
-            filleul.
-          </p>
+      <div className="rounded-2xl border bg-card p-4 md:p-5">
+  
+        <div className="mb-5 flex items-start gap-3">
+          <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-brand-gold/15 text-lg">
+            🎉
+          </div>
+  
+          <div className="min-w-0">
+            <h3 className="font-semibold text-brand-deep">
+              Surprise Gourmande
+            </h3>
+  
+            <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+              Définissez les récompenses offertes au parrain
+              après la première commande de son filleul.
+            </p>
+          </div>
         </div>
-
-        <div className="space-y-3">
-
+  
+        <div className="space-y-2">
+  
           {referralSurprises.length === 0 ? (
             <div className="rounded-xl border border-dashed p-4 text-sm text-muted-foreground">
               Aucune surprise de parrainage configurée.
             </div>
           ) : (
-            referralSurprises.map(
-              (item, index) => (
-                <div
-                  key={`${item.label}-${index}`}
-                  className="flex items-center gap-3"
-                >
-
-                  <div className="flex-1 min-w-0">
-                    <input
-                      value={item.label}
-                      onChange={(e) =>
-                        updateReferralSurpriseLabel(
-                          index,
-                          e.target.value
-                        )
-                      }
-                      className="w-full h-10 rounded-xl border bg-background px-3 text-sm"
-                      placeholder="Nom de la surprise"
-                    />
-                  </div>
-
+            referralSurprises.map((item, index) => (
+              <div
+                key={`${item.label}-${index}`}
+                className="flex items-center gap-3 rounded-xl bg-muted/40 p-2.5"
+              >
+  
+                <div className="min-w-0 flex-1">
                   <input
-                    type="number"
-                    min="0"
-                    max="100"
-                    value={item.weight}
+                    value={item.label}
                     onChange={(e) =>
-                      updateReferralSurpriseWeight(
+                      updateReferralSurpriseLabel(
                         index,
-                        Number(e.target.value)
+                        e.target.value
                       )
                     }
-                    className="w-20 h-10 rounded-xl border bg-background px-3 text-sm text-center"
+                    className="h-9 w-full rounded-lg border bg-background px-3 text-sm outline-none transition focus:border-brand-gold focus:ring-2 focus:ring-brand-gold/20"
+                    placeholder="Nom de la surprise"
                   />
-
-                  <span className="text-xs text-muted-foreground w-6">
-                    %
-                  </span>
-
                 </div>
-              )
-            )
+  
+                <input
+                  type="number"
+                  min="0"
+                  max="100"
+                  value={item.weight}
+                  onChange={(e) =>
+                    updateReferralSurpriseWeight(
+                      index,
+                      Number(e.target.value)
+                    )
+                  }
+                  className="h-9 w-16 shrink-0 rounded-lg border bg-background px-2 text-center text-sm outline-none transition focus:border-brand-gold focus:ring-2 focus:ring-brand-gold/20"
+                />
+  
+                <span className="w-4 shrink-0 text-xs font-medium text-muted-foreground">
+                  %
+                </span>
+  
+              </div>
+            ))
           )}
-
+  
         </div>
-
+  
         <div
           className={
-            "mt-4 rounded-xl p-3 text-sm font-medium " +
+            "mt-4 flex items-center justify-between rounded-xl px-3 py-3 text-xs font-semibold " +
             (referralTotalWeight === 100
               ? "bg-emerald-50 text-emerald-700"
               : "bg-amber-50 text-amber-700")
           }
         >
-          Total des probabilités :{" "}
-          {referralTotalWeight} %
+          <span>Total des probabilités</span>
+          <span>{referralTotalWeight} %</span>
         </div>
-
+  
       </div>
-
-
+  
+  
       {/* BOUTON */}
-      <div className="flex justify-end">
-
+      <div className="flex justify-end pt-1">
+  
         <Button
           onClick={handleSave}
           disabled={
@@ -1724,15 +1955,15 @@ function SettingsEditor({
             totalWeight !== 100 ||
             referralTotalWeight !== 100
           }
-          className="rounded-full px-6"
+          className="h-11 w-full rounded-xl px-6 sm:w-auto"
         >
           {saving
             ? "Enregistrement..."
             : "Enregistrer les paramètres"}
         </Button>
-
+  
       </div>
-
+  
     </div>
   );
 }
