@@ -62,8 +62,8 @@ export function ProductCard({
   const finalPrice = product.price + addonsTotal;
 
   return (
-    <div className="group bg-card p-4 rounded-[28px] ring-1 ring-border flex flex-col transition-shadow hover:shadow-xl hover:shadow-brand-gold/5">
-      <div className="relative w-full aspect-square rounded-[20px] overflow-hidden mb-6 bg-secondary">
+    <div className="group bg-card p-3 md:p-4 rounded-[24px] md:rounded-[28px] ring-1 ring-border flex flex-col transition-shadow hover:shadow-xl hover:shadow-brand-gold/5">
+      <div className="relative w-full aspect-[4/3] md:aspect-square rounded-[18px] md:rounded-[20px] overflow-hidden mb-4 md:mb-6 bg-secondary">
         <img
           src={product.image || "/placeholder.png"}
           alt={product.name}
@@ -83,9 +83,9 @@ export function ProductCard({
         )}
       </div>
 
-      <div className="px-2 pb-2 flex-1 flex flex-col">
-        <div className="flex justify-between items-start gap-3 mb-2">
-          <h3 className="font-semibold text-xl leading-tight">
+      <div className="px-1 md:px-2 pb-1 md:pb-2 flex-1 flex flex-col">
+        <div className="flex justify-between items-start gap-2 md:gap-3 mb-2">
+          <h3 className="font-semibold text-lg md:text-xl leading-tight">
             {product.name}
           </h3>
 
@@ -94,18 +94,18 @@ export function ProductCard({
           </span>
         </div>
 
-        <p className="text-sm text-muted-foreground text-pretty mb-4 leading-relaxed">
+        <p className="text-sm text-muted-foreground text-pretty mb-2 md:mb-4 leading-snug md:leading-relaxed">
           {product.description}
         </p>
 
-        <p className="text-[11px] text-muted-foreground/70 mb-6">
+        <p className="text-[11px] text-muted-foreground/70 mb-4 md:mb-6">
           {product.ingredients?.join(" • ")}
         </p>
 
         {!showAddons ? (
           <button
             onClick={openAddons}
-            className="mt-auto w-full py-3 px-4 bg-secondary text-foreground text-sm font-semibold rounded-2xl flex items-center justify-center gap-2 group-hover:bg-brand-gold group-hover:text-white transition-colors"
+            className="mt-auto w-full py-2.5 md:py-3 px-3 md:px-4 bg-secondary text-foreground text-sm font-semibold rounded-xl md:rounded-2xl flex items-center justify-center gap-2 group-hover:bg-brand-gold group-hover:text-white transition-colors"
           >
             <Plus className="size-4" />
             Ajouter au panier
