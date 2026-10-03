@@ -2,6 +2,7 @@ import { supabase } from "./supabase";
 
 export type NotificationType =
   | "new_order"
+  | "order_confirmed"
   | "order_cancelled"
   | "referral_reward"
   | "loyalty_reward";
@@ -58,12 +59,21 @@ export async function createNotification({
 }
 
 /**
- * Récupère les notifications les plus récentes
+ * Récupère les notifications utiles au dashboard vendeur.
+ *
+ * Les notifications de confirmation et d'annulation
+ * restent en base pour l'historique, mais ne sont pas
+ * affichées dans la cloche du vendeur.
  */
 export async function getNotifications(limit = 30) {
   const { data, error } = await supabase
     .from("notifications")
     .select("*")
+    .not(
+      "type",
+      "in",
+      '("order_confirmed","order_cancelled")'
+    )
     .order("created_at", {
       ascending: false,
     })
@@ -82,7 +92,7 @@ export async function getNotifications(limit = 30) {
 }
 
 /**
- * Compte les notifications non lues
+ * Compte les notifications non lues utiles au dashboard vendeur.
  */
 export async function getUnreadNotificationCount() {
   const { count, error } = await supabase
@@ -91,7 +101,12 @@ export async function getUnreadNotificationCount() {
       count: "exact",
       head: true,
     })
-    .eq("read", false);
+    .eq("read", false)
+    .not(
+      "type",
+      "in",
+      '("order_confirmed","order_cancelled")'
+    );
 
   if (error) {
     console.error(
@@ -131,7 +146,10 @@ export async function markNotificationAsRead(
 }
 
 /**
- * Marque toutes les notifications comme lues
+ * Marque toutes les notifications utiles comme lues.
+ *
+ * Les confirmations et annulations ne sont pas concernées
+ * puisqu'elles ne sont pas affichées dans le dashboard.
  */
 export async function markAllNotificationsAsRead() {
   const { error } = await supabase
@@ -139,7 +157,12 @@ export async function markAllNotificationsAsRead() {
     .update({
       read: true,
     })
-    .eq("read", false);
+    .eq("read", false)
+    .not(
+      "type",
+      "in",
+      '("order_confirmed","order_cancelled")'
+    );
 
   if (error) {
     console.error(
@@ -154,24 +177,36 @@ export async function markAllNotificationsAsRead() {
 }
 
 export function subscribeToNotifications(
-    onNotification: (notification: Notification) => void
-  ) {
-    const channel = supabase
-      .channel("notifications-realtime")
-      .on(
-        "postgres_changes",
-        {
-          event: "INSERT",
-          schema: "public",
-          table: "notifications",
-        },
-        (payload) => {
-          onNotification(payload.new as Notification);
+  onNotification: (notification: Notification) => void
+) {
+  const channel = supabase
+    .channel("notifications-realtime")
+    .on(
+      "postgres_changes",
+      {
+        event: "INSERT",
+        schema: "public",
+        table: "notifications",
+      },
+      (payload) => {
+        const notification =
+          payload.new as Notification;
+
+        // Ne pas transmettre au dashboard vendeur
+        // les confirmations et annulations.
+        if (
+          notification.type === "order_confirmed" ||
+          notification.type === "order_cancelled"
+        ) {
+          return;
         }
-      )
-      .subscribe();
-  
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }
+
+        onNotification(notification);
+      }
+    )
+    .subscribe();
+
+  return () => {
+    supabase.removeChannel(channel);
+  };
+}

@@ -13,6 +13,7 @@ import { findCustomer } from "@/lib/customers";
 import {
   registerCustomerPushSubscription,
   getCustomerPushStatus,
+  needsIOSHomeScreenInstall,
 } from "@/lib/push";
 import { getActiveLocation, type Location } from "@/lib/locations";
 import { LocationMap } from "@/components/LocationMap.client";
@@ -21,13 +22,13 @@ import { getLoyaltySettings } from "@/lib/loyalty";
 export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
-      { title: "Pause Gourmande — Crêpes & Gaufres artisanales à Lomé" },
+      { title: "Pause Gourmande — Crêpes & Douceurs artisanales à Lomé" },
       {
         name: "description",
         content:
-          "Commandez vos crêpes et gaufres faites main. Retrouvez notre food-truck aujourd'hui à l'Université de Lomé, de 09h à 15h.",
+          "Commandez vos crêpes et douceurs faites main. Retrouvez notre food-truck aujourd'hui à l'Université de Lomé, de 09h à 15h.",
       },
-      { property: "og:title", content: "Pause Gourmande — Crêpes & Gaufres à Lomé" },
+      { property: "og:title", content: "Pause Gourmande — Crêpes & Douceurs à Lomé" },
       {
         property: "og:description",
         content: "Le réconfort d'une crêpe faite main. Commande, réservation, fidélité et jeu.",
@@ -40,7 +41,6 @@ export const Route = createFileRoute("/")({
 const CATEGORIES = [
   "Tout",
   "Crêpes",
-  "Gaufres",
   "Pancakes",
   "Packs",
 ] as const;
@@ -56,10 +56,15 @@ function Home() {
   const [location, setLocation] = useState<Location | null>(null);
   const [nextRewardAt, setNextRewardAt] = useState(500);
   const [loyaltyReward, setLoyaltyReward] = useState("-10%");
-  const [pushStatus, setPushStatus] = useState<"disabled" | "enabled">("disabled");
+  const [pushStatus, setPushStatus] = useState<
+    "enabled" | "disabled" | "blocked"
+>("disabled");
   const [enablingNotifications, setEnablingNotifications] = useState(false);
+  const [needsIOSInstall, setNeedsIOSInstall] = useState(false);
 
   useEffect(() => {
+    setNeedsIOSInstall(needsIOSHomeScreenInstall());
+
     async function loadHomeData() {
       const [productsData, locationData] = await Promise.all([
         getProducts(),
@@ -118,6 +123,14 @@ function Home() {
       }
     
       if (pushStatus === "enabled") {
+        return;
+      }
+
+      if (needsIOSHomeScreenInstall()) {
+        toast.info("Ajoutez d'abord Pause Gourmande à votre écran d'accueil.", {
+          description:
+            "Sur iPhone, les notifications nécessitent l'application installée depuis Safari.",
+        });
         return;
       }
     
@@ -408,21 +421,51 @@ function Home() {
               className="h-14 text-center text-lg font-semibold rounded-2xl bg-white border-2 border-brand-gold/20 focus-visible:border-brand-gold focus-visible:ring-brand-gold/20"
             />
 
-            {loyaltyPhone.length === 8 && (
-              <Button
-                variant="outline"
-                disabled={enablingNotifications || pushStatus === "enabled"}
-                className="w-full mt-4 h-12 rounded-2xl"
-                onClick={enableCustomerNotifications}
-              >
-                {enablingNotifications
-                  ? "Activation…"
-                  : pushStatus === "enabled"
-                    ? "🔔 Notifications activées"
-                    : "🔔 Recevoir les notifications de ma commande"}
-              </Button>
-            )}
-          </div>
+            {loyaltyPhone.length === 8 && pushStatus !== "enabled" && (
+             <div className="w-full mt-4 rounded-2xl border border-brand-gold/30 bg-brand-gold/5 p-4">
+              {needsIOSInstall ? (
+                <div className="space-y-1.5">
+                  <p className="font-semibold text-brand-deep">
+                    Ajouter l'application à votre écran d'accueil.
+                  </p>
+
+                  <p className="text-xs text-muted-foreground">
+                    Veuillez ouvrir Pause Gourmande depuis l'icône de votre écran
+                    d'accueil pour pouvoir activer les notifications.
+                  </p>
+                </div>
+              ) : (
+            <>
+              {pushStatus === "disabled" && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  disabled={enablingNotifications}
+                  className="w-full h-12 rounded-2xl"
+                  onClick={enableCustomerNotifications}
+                >
+                  {enablingNotifications
+                    ? "Activation…"
+                    : "🔔 Activer les notifications"}
+                </Button>
+              )}
+
+              {pushStatus === "blocked" && (
+                <div className="text-center">
+                  <p className="font-semibold text-destructive">
+                    Notifications bloquées
+                  </p>
+
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Autorisez-les dans votre navigateur.
+                  </p>
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      )}
+    </div>
 
                 <div className="flex items-center justify-between mb-6">
                   <div className="flex items-center gap-4">

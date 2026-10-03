@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { Switch } from "@/components/ui/switch";
 import { NotificationBell } from "@/components/NotificationBell";
 import { registerPushSubscription, getAdminPushStatus} from "@/lib/push";
+import { Search } from "lucide-react";
 import {
   ArrowLeft,
   TrendingUp,
@@ -91,6 +92,9 @@ function Dashboard() {
     "enabled" | "disabled" | "blocked"
   >("disabled");
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [orderSearch, setOrderSearch] = useState("");
+  const [ordersToShow, setOrdersToShow] = useState(10);
+  const ADMIN_SESSION_DURATION = 24 * 60 * 60 * 1000;
 
   async function loadData() {
 
@@ -241,34 +245,58 @@ function Dashboard() {
   useEffect(() => {
     async function checkAdmin() {
       const {
-        data: { user },
-      } = await supabase.auth.getUser();
-
-      console.log("🔐 USER CONNECTÉ :", user);
+        data: { session },
+      } = await supabase.auth.getSession();
   
-      if (!user) {
+      console.log("🔐 SESSION DASHBOARD :", session);
+  
+      if (!session?.user) {
         navigate({
           to: "/admin-login",
+          replace: true,
         });
+        return;
+      }
+  
+      const loginTime = Number(
+        localStorage.getItem("pause_gourmande_admin_login")
+      );
+  
+      if (
+        !loginTime ||
+        Date.now() - loginTime >= ADMIN_SESSION_DURATION
+      ) {
+        console.log("⏰ SESSION ADMIN EXPIRÉE");
+  
+        localStorage.removeItem("pause_gourmande_admin_login");
+  
+        await supabase.auth.signOut();
+  
+        navigate({
+          to: "/admin-login",
+          replace: true,
+        });
+  
         return;
       }
   
       const { data: admin, error } = await supabase
         .from("admin_users")
         .select("role")
-        .eq("user_id", user.id)
+        .eq("user_id", session.user.id)
         .maybeSingle();
-
-        console.log("👤 ADMIN :", {
-          admin,
-          error,
-        });
+  
+      console.log("👤 ADMIN :", {
+        admin,
+        error,
+      });
   
       if (error || !admin) {
-        await supabase.auth.signOut();
+        console.error("❌ Accès dashboard refusé :", error);
   
         navigate({
           to: "/admin-login",
+          replace: true,
         });
   
         return;
@@ -278,18 +306,120 @@ function Dashboard() {
     }
   
     checkAdmin();
-  }, []);
+  }, [navigate]);
+
+  useEffect(() => {
+    if (checkingAuth) {
+      return;
+    }
+  
+    let lastUpdate = 0;
+  
+    function updateAdminActivity() {
+      const now = Date.now();
+  
+      // Évite d'écrire dans localStorage à chaque mouvement de souris
+      if (now - lastUpdate < 60_000) {
+        return;
+      }
+  
+      lastUpdate = now;
+  
+      localStorage.setItem(
+        "pause_gourmande_admin_login",
+        now.toString()
+      );
+    }
+  
+    const events = [
+      "click",
+      "keydown",
+      "touchstart",
+      "scroll",
+    ];
+  
+    events.forEach((event) => {
+      window.addEventListener(event, updateAdminActivity);
+    });
+  
+    return () => {
+      events.forEach((event) => {
+        window.removeEventListener(event, updateAdminActivity);
+      });
+    };
+  }, [checkingAuth]);
+
+  useEffect(() => {
+    if (checkingAuth) {
+      return;
+    }
+  
+    const interval = window.setInterval(async () => {
+      const lastActivity = Number(
+        localStorage.getItem("pause_gourmande_admin_login")
+      );
+  
+      if (
+        !lastActivity ||
+        Date.now() - lastActivity >= ADMIN_SESSION_DURATION
+      ) {
+        console.log("⏰ SESSION ADMIN EXPIRÉE APRÈS INACTIVITÉ");
+  
+        localStorage.removeItem(
+          "pause_gourmande_admin_login"
+        );
+  
+        await supabase.auth.signOut();
+  
+        navigate({
+          to: "/admin-login",
+          replace: true,
+        });
+      }
+    }, 60_000);
+  
+    return () => {
+      window.clearInterval(interval);
+    };
+  }, [checkingAuth, navigate]);
 
   const filtered = useMemo(() => {
     const cfg = RANGES.find((r) => r.key === range)!;
-    if (cfg.days === null) return orders;
+  
+    let result = orders;
+  
     if (cfg.days === 0) {
       const s = startOfToday();
-      return orders.filter((o) => o.createdAt >= s);
+  
+      result = orders.filter((o) => o.createdAt >= s);
+    } else if (cfg.days !== null) {
+      const cutoff = Date.now() - cfg.days * 86400_000;
+  
+      result = orders.filter((o) => o.createdAt >= cutoff);
     }
-    const cutoff = Date.now() - cfg.days * 86400_000;
-    return orders.filter((o) => o.createdAt >= cutoff);
-  }, [orders, range]);
+  
+    const search = orderSearch.trim().toLowerCase();
+  
+    if (!search) {
+      return result;
+    }
+  
+    return result.filter((o) => {
+      const name = o.customerName?.toLowerCase() ?? "";
+      const phone = o.phone?.toLowerCase() ?? "";
+      const id = o.id?.toLowerCase() ?? "";
+  
+      return (
+        name.includes(search) ||
+        phone.includes(search) ||
+        id.includes(search)
+      );
+    });
+  }, [orders, range, orderSearch]);
+
+  useEffect(() => {
+    setOrdersToShow(10);
+  }, [range, orderSearch]);
 
   const stats = useMemo(() => {
     const revenue = filtered
@@ -534,8 +664,12 @@ function Dashboard() {
             size="sm"
             className="rounded-full"
             onClick={async () => {
+              localStorage.removeItem(
+                "pause_gourmande_admin_login"
+              );
+            
               await supabase.auth.signOut();
-
+            
               navigate({
                 to: "/admin-login",
               });
@@ -883,25 +1017,39 @@ function Dashboard() {
     </div>
   </section>
 
-  {/* COMMANDES — PRIORITÉ */}
+  {/* COMMANDES */}
   <section className="bg-card rounded-[24px] md:rounded-[28px] ring-1 ring-border overflow-hidden">
 
-<div className="p-4 md:p-6 border-b border-border flex items-center justify-between gap-3">
-  <div>
-    <div className="flex items-center gap-2">
-      <ShoppingBag className="size-5 text-brand-gold" />
+  <div className="p-4 md:p-6 border-b border-border space-y-4">
+    <div className="flex items-center justify-between gap-3">
+      <div>
+        <div className="flex items-center gap-2">
+          <ShoppingBag className="size-5 text-brand-gold" />
 
-      <h2 className="text-base md:text-lg font-semibold">
-        Commandes récentes
-      </h2>
+          <h2 className="text-base md:text-lg font-semibold">
+            Commandes récentes
+          </h2>
+        </div>
+
+        <p className="text-xs text-muted-foreground mt-1">
+          {filtered.length} commande
+          {filtered.length > 1 ? "s" : ""} sur la période
+        </p>
+      </div>
     </div>
 
-    <p className="text-xs text-muted-foreground mt-1">
-      {filtered.length} commande
-      {filtered.length > 1 ? "s" : ""} sur la période
-    </p>
+    <div className="relative w-full">
+      <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
+
+      <input
+        type="text"
+        value={orderSearch}
+        onChange={(e) => setOrderSearch(e.target.value)}
+        placeholder="Rechercher une commande..."
+        className="h-11 w-full rounded-xl border border-border bg-background pl-10 pr-3 text-sm outline-none transition placeholder:text-muted-foreground/70 focus:border-brand-gold focus:ring-2 focus:ring-brand-gold/10"
+      />
+    </div>
   </div>
-</div>
 
 {filtered.length === 0 ? (
   <div className="p-10 md:p-12 text-center text-sm text-muted-foreground">
@@ -910,64 +1058,80 @@ function Dashboard() {
     Les commandes passées depuis la boutique apparaîtront ici.
   </div>
 ) : (
-  <div className="divide-y divide-border">
-    {filtered.slice(0, 25).map((o) => (
-      <OrderRow
-        key={o.id}
-        order={o}
-        onStatus={async (id, status) => {
-          const result = await updateOrderStatus(id, status);
+  <>
+    <div className="divide-y divide-border">
+      {filtered.slice(0, ordersToShow).map((o) => (
+        <OrderRow
+          key={o.id}
+          order={o}
+          onStatus={async (id, status) => {
+            const result = await updateOrderStatus(id, status);
 
-          if (result.error) {
-            console.error(
-              "ERREUR CHANGEMENT STATUT :",
-              result.error
-            );
+            if (result.error) {
+              console.error(
+                "ERREUR CHANGEMENT STATUT :",
+                result.error
+              );
 
-            toast.error(
+              toast.error(
+                status === "cancelled"
+                  ? "Impossible d'annuler la commande."
+                  : "Impossible de valider la commande.",
+                {
+                  description: result.error.message,
+                }
+              );
+
+              return;
+            }
+
+            toast.success(
               status === "cancelled"
-                ? "Impossible d'annuler la commande."
-                : "Impossible de valider la commande.",
-              {
-                description: result.error.message,
-              }
+                ? "Commande annulée."
+                : "Commande validée."
             );
 
-            return;
-          }
+            const updated = await getOrders();
 
-          toast.success(
-            status === "cancelled"
-              ? "Commande annulée."
-              : "Commande validée."
-          );
-
-          const updated = await getOrders();
-
-          setOrders(
-            updated.map((order: any) => ({
-              ...order,
-              customerName: order.customer_name,
-              createdAt: new Date(order.created_at).getTime(),
-              rewardSource: order.reward_source ?? null,
-              rewardValue: order.reward_value ?? null,
-              rewardDiscount: order.reward_discount ?? null,
-              lines: (order.order_items ?? []).map((item: any) => ({
-                productId: item.product_id,
-                name: item.name,
-                qty: item.quantity,
-                price: item.price,
-                category: "",
-                note: item.note ?? undefined,
-              })),
-              pointsEarned: Math.floor(order.total / 100),
-            }))
-          );
-        }}
-      />
-    ))}
-  </div>
-)}
+            setOrders(
+              updated.map((order: any) => ({
+                ...order,
+                customerName: order.customer_name,
+                createdAt: new Date(order.created_at).getTime(),
+                rewardSource: order.reward_source ?? null,
+                rewardValue: order.reward_value ?? null,
+                rewardDiscount: order.reward_discount ?? null,
+                lines: (order.order_items ?? []).map((item: any) => ({
+                  productId: item.product_id,
+                  name: item.name,
+                  qty: item.quantity,
+                  price: item.price,
+                  category: "",
+                  note: item.note ?? undefined,
+                })),
+                pointsEarned: Math.floor(order.total / 100),
+              }))
+            );  
+          }}
+        />
+        ))}
+      </div>
+  
+      {filtered.length > ordersToShow && (
+        <div className="flex justify-center border-t border-border p-4">
+          <Button
+            variant="outline"
+            className="rounded-full px-6"
+            onClick={() =>
+              setOrdersToShow((current) => current + 10)
+            }
+          >
+            Charger plus
+          </Button>
+        </div>
+      )}
+    </>  
+  )}
 </section>
 
 
@@ -1371,7 +1535,7 @@ function OrderRow({
         {/* ACTIONS */}
         <div className="flex justify-end px-4 py-2 md:px-5 md:py-2.5">
   <div className="flex items-center gap-1.5">
-    {order.status !== "done" && (
+    {order.status === "pending" && (
       <Button
         size="icon"
         variant="ghost"

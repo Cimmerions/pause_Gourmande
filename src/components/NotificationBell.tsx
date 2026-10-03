@@ -5,7 +5,6 @@ import {
   ShoppingBag,
   Gift,
   Star,
-  XCircle,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -362,11 +361,6 @@ function NotificationIcon({
     case "new_order":
       return (
         <ShoppingBag className="size-4 text-brand-gold" />
-      );
-
-    case "order_cancelled":
-      return (
-        <XCircle className="size-4 text-rose-500" />
       );
 
     case "referral_reward":
