@@ -12,7 +12,11 @@ import { formatFCFA } from "../lib/products";
 import { findCustomer } from "@/lib/customers";
 import { getRewards } from "@/lib/rewards";
 import { getLoyaltySettings } from "@/lib/loyalty";
-import { registerCustomerPushSubscription, getCustomerPushStatus} from "@/lib/push";
+import {
+  registerCustomerPushSubscription,
+  getCustomerPushStatus,
+  needsIOSHomeScreenInstall,
+} from "@/lib/push";
 
 export function CartSheet({ children }: { children: React.ReactNode }) {
   const { items, setQty, remove, setNote, total, submitOrder } = useCart();
@@ -35,6 +39,12 @@ export function CartSheet({ children }: { children: React.ReactNode }) {
 >("disabled");
 
   const [enablingNotifications, setEnablingNotifications] = useState(false);
+  const [needsIOSInstall, setNeedsIOSInstall] = useState(false);
+
+  useEffect(() => {
+    setNeedsIOSInstall(needsIOSHomeScreenInstall());
+  }, []);
+
   let rewardDiscount = 0;
 
   if (selectedReward?.type === "discount") {
@@ -97,14 +107,14 @@ export function CartSheet({ children }: { children: React.ReactNode }) {
   }, [phone]);
 
   useEffect(() => {
+    if (phone.length !== 8) {
+      setPushStatus("disabled");
+      return;
+    }
+  
     let cancelled = false;
   
     async function checkPushStatus() {
-      if (phone.length !== 8) {
-        setPushStatus("disabled");
-        return;
-      }
-  
       const status = await getCustomerPushStatus(phone);
   
       if (!cancelled) {
@@ -386,72 +396,69 @@ export function CartSheet({ children }: { children: React.ReactNode }) {
                     />
 
                     {/* NOTIFICATIONS */}
-                    {phone.length === 8 && (
-                      <div className="mt-3 rounded-2xl border border-brand-gold/30 bg-brand-gold/5 p-3">
-                        <div className="flex items-start gap-3">
-                          <div className="mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-full bg-brand-gold/10">
-                            <Bell className="size-4 text-brand-gold" />
+                    {phone.length === 8 && pushStatus !== "enabled" && (
+                      <div className="mt-3 rounded-2xl border border-brand-gold/25 bg-brand-gold/5 px-3 py-2.5">
+                        {needsIOSInstall ? (
+                          <div className="space-y-1.5">
+                            <div className="flex items-center gap-2.5">
+                              <div className="flex size-8 shrink-0 items-center justify-center rounded-full bg-brand-gold/10">
+                                <Bell className="size-4 text-brand-gold" />
+                              </div>
+
+                              <p className="text-sm font-semibold text-brand-deep">
+                                Ajouter l'application à votre écran d'accueil.
+                              </p>
+                            </div>
+
+                            <p className="mt-1 text-xs text-muted-foreground">
+                              Veuillez ouvrir Pause Gourmande depuis l'icône de votre écran
+                              d'accueil pour pouvoir activer les notifications.
+                            </p>
                           </div>
-
-                          <div className="flex-1 min-w-0">
-
-                            {pushStatus === "enabled" && (
-                          <>
-                            <p className="text-sm font-semibold">
-                              Notifications activées ✓
-                            </p>
-
-                            <p className="text-xs text-muted-foreground mt-1">
-                              Vous serez prévenu lorsque votre commande sera confirmée
-                              ou annulée.
-                            </p>
-                          </>
-                        )}
-
+                        ) : (
+                      <>
                         {pushStatus === "disabled" && (
-                          <>
-                            <p className="text-sm font-semibold">
-                              Suivre ma commande 🔔
-                            </p>
-
-                            <p className="text-xs text-muted-foreground mt-1">
-                              Recevez une notification lorsque votre commande est
-                              confirmée ou annulée.
-                            </p>
+                          <div className="flex items-center gap-2.5">
+                            <div className="flex size-8 shrink-0 items-center justify-center rounded-full bg-brand-gold/10">
+                              <Bell className="size-4 text-brand-gold" />
+                            </div>
 
                             <Button
                               type="button"
                               variant="outline"
                               disabled={enablingNotifications}
                               onClick={enableCustomerNotifications}
-                              className="mt-3 h-9 rounded-full text-xs font-semibold"
+                              className="h-8 flex-1 rounded-full border-brand-gold/40 bg-background px-3 text-xs font-semibold"
                             >
                               {enablingNotifications
                                 ? "Activation…"
                                 : "Activer les notifications"}
                             </Button>
-                          </>
+                          </div>
                         )}
 
                         {pushStatus === "blocked" && (
-                          <>
-                            <p className="text-sm font-semibold text-destructive">
-                              Notifications bloquées
-                            </p>
+                          <div className="flex items-center gap-2.5">
+                            <div className="flex size-8 shrink-0 items-center justify-center rounded-full bg-destructive/10">
+                              <Bell className="size-4 text-destructive" />
+                            </div>
 
-                            <p className="text-xs text-muted-foreground mt-1">
-                              Les notifications sont bloquées dans votre navigateur.
-                              Autorisez-les dans les paramètres du site pour recevoir
-                              le suivi de votre commande.
-                            </p>
-                          </>
+                            <div className="min-w-0">
+                              <p className="text-sm font-semibold text-destructive">
+                                Notifications bloquées
+                              </p>
+
+                              <p className="text-xs text-muted-foreground">
+                                Autorisez-les dans votre navigateur.
+                              </p>
+                            </div>
+                          </div>
                         )}
-
-                      </div>
-                    </div>
+                      </>
+                    )}
                   </div>
                 )}
-
+                
                   {/* PARRAINAGE */}
                   <div className="space-y-2">
                     <Label htmlFor="referralCode">

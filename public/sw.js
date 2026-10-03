@@ -1,3 +1,4 @@
+console.log("🟢 SW Pause Gourmande chargé");
 self.addEventListener("push", (event) => {
     if (!event.data) {
       return;

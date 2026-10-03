@@ -5,6 +5,7 @@ import netlify from "@netlify/vite-plugin-tanstack-start";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import path from "path";
+import fs from "node:fs";
 
 export default defineConfig(({ mode }) => ({
   plugins: [
@@ -18,5 +19,18 @@ export default defineConfig(({ mode }) => ({
     alias: {
       "@": path.resolve(__dirname, "./src"),
     },
+  },
+
+  server: {
+    host: "0.0.0.0",
+
+    ...(mode === "development"
+      ? {}
+      : {
+          https: {
+            key: fs.readFileSync("./certs/localhost-key.pem"),
+            cert: fs.readFileSync("./certs/localhost.pem"),
+          },
+        }),
   },
 }));

@@ -75,14 +75,14 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "Pause Gourmande — Crêpes & Gaufres à Lomé" },
+      { title: "Pause Gourmande — Crêpes & Douceurs à Lomé" },
       {
         name: "description",
         content:
-          "Commandez vos crêpes et gaufres faites main à Lomé. Fidélité, roue de la chance et parrainage.",
+          "Commandez vos crêpes et douceurs faites main à Lomé. Fidélité, roue de la chance et parrainage.",
       },
       { name: "author", content: "Pause Gourmande" },
-      { property: "og:title", content: "Pause Gourmande — Crêpes & Gaufres à Lomé" },
+      { property: "og:title", content: "Pause Gourmande — Crêpes & Douceurs à Lomé" },
       {
         property: "og:description",
         content: "Le réconfort d'une crêpe faite main. Commande, fidélité, jeu.",
