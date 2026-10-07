@@ -19,8 +19,8 @@ self.addEventListener("push", (event) => {
   
     const options = {
       body: data.body || "Nouvelle notification",
-      icon: "/favicon.ico",
-      badge: "/favicon.ico",
+      icon: "/icons/icon-192.png",
+      badge: "/icons/icon-192.png",
       data: {
         url: data.url || "/dashboard",
       },
