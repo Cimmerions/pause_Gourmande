@@ -33,6 +33,15 @@ export async function createOrder(
           addons: item.addons ?? [],
         })),
         p_reward_id: rewardId ?? null,
+        p_reception_mode: order.receptionMode ?? "pickup",
+        p_delivery_latitude:
+          order.receptionMode === "delivery"
+            ? order.deliveryLatitude ?? null
+            : null,
+        p_delivery_longitude:
+          order.receptionMode === "delivery"
+            ? order.deliveryLongitude ?? null
+            : null,
       }
     );
 
@@ -128,6 +137,26 @@ export async function getOrders() {
     return data;
   }
 
+  
+export async function getCustomerOrders() {
+  const { data, error } = await supabase.rpc(
+    "get_my_orders_with_items"
+  );
+
+  if (error) {
+    console.error(
+      "Erreur récupération commandes client :",
+      error
+    );
+  }
+
+  return {
+    data,
+    error,
+  };
+}
+
+
   export async function updateOrderStatus(
     id: string,
     status: string
@@ -215,5 +244,79 @@ export async function getOrders() {
   
     return () => {
       supabase.removeChannel(channel);
+    };
+  }
+
+  export async function proposeDeliveryFee(
+    orderId: string,
+    deliveryFee: number
+  ) {
+    if (!Number.isInteger(deliveryFee) || deliveryFee < 0) {
+      return {
+        data: null,
+        error: new Error("Frais de livraison invalides."),
+      };
+    }
+  
+    const { data, error } = await supabase.rpc(
+      "propose_delivery_fee",
+      {
+        p_order_id: orderId,
+        p_delivery_fee: deliveryFee,
+      }
+    );
+  
+    if (error) {
+      console.error(
+        "Erreur proposition frais de livraison :",
+        error
+      );
+    }
+  
+    return {
+      data,
+      error,
+    };
+  }
+
+  export async function acceptDelivery(orderId: string) {
+    const { data, error } = await supabase.rpc(
+      "accept_delivery",
+      {
+        p_order_id: orderId,
+      }
+    );
+  
+    if (error) {
+      console.error(
+        "Erreur acceptation livraison :",
+        error
+      );
+    }
+  
+    return {
+      data,
+      error,
+    };
+  }
+  
+  export async function refuseDelivery(orderId: string) {
+    const { data, error } = await supabase.rpc(
+      "refuse_delivery",
+      {
+        p_order_id: orderId,
+      }
+    );
+  
+    if (error) {
+      console.error(
+        "Erreur refus livraison :",
+        error
+      );
+    }
+  
+    return {
+      data,
+      error,
     };
   }

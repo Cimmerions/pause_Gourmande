@@ -20,11 +20,17 @@ import {
   Bell,
   Menu,
   X,
+  MapPin,
+  Send,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useCart, type Order } from "@/lib/cart-store";
 import { getProducts, formatFCFA, type Product } from "@/lib/products";
-import { getOrders, updateOrderStatus } from "@/lib/orders";
+import {
+  getOrders,
+  updateOrderStatus,
+  proposeDeliveryFee,
+} from "@/lib/orders";
 import {
   getNotifications,
   getUnreadNotificationCount,
@@ -113,10 +119,17 @@ function Dashboard() {
       ordersData.map((order: any) => ({
         ...order,
         customerName: order.customer_name,
+        receptionMode: order.reception_mode ?? "pickup",
+        deliveryLatitude: order.delivery_latitude ?? null,
+        deliveryLongitude: order.delivery_longitude ?? null,
+        deliveryFee: Number(order.delivery_fee ?? 0),
+        deliveryStatus: order.delivery_status ?? null,
         createdAt: new Date(order.created_at).getTime(),
         rewardSource: order.reward_source ?? null,
         rewardValue: order.reward_value ?? null,
         rewardDiscount: order.reward_discount ?? null,
+        pointsAwarded: order.points_awarded ?? false,
+        pointsAwardedAmount: Number(order.points_awarded_amount ?? 0),
         lines: (order.order_items ?? []).map((item: any) => ({
           productId: item.product_id,
           name: item.name,
@@ -431,8 +444,14 @@ function Dashboard() {
       .reduce((s, o) => s + o.lines.reduce((a, l) => a + l.qty, 0), 0);
     const avg = count ? Math.round(revenue / count) : 0;
     const pointsGiven = filtered
-      .filter((o) => o.status !== "cancelled")
-      .reduce((s, o) => s + o.pointsEarned, 0);
+    .reduce(
+      (sum, order) =>
+        sum +
+        (order.pointsAwarded
+          ? (order.pointsAwardedAmount ?? 0)
+          : 0),
+      0
+    );
     return { revenue, count, items, avg, pointsGiven };
   }, [filtered]);
 
@@ -1101,6 +1120,8 @@ function Dashboard() {
                 rewardSource: order.reward_source ?? null,
                 rewardValue: order.reward_value ?? null,
                 rewardDiscount: order.reward_discount ?? null,
+                pointsAwarded: order.points_awarded ?? false,
+                pointsAwardedAmount: Number(order.points_awarded_amount ?? 0),
                 lines: (order.order_items ?? []).map((item: any) => ({
                   productId: item.product_id,
                   name: item.name,
@@ -1306,6 +1327,12 @@ function OrderRow({
   order: Order;
   onStatus: (id: string, status: Order["status"]) => void;
 }) {
+  const [deliveryFeeInput, setDeliveryFeeInput] = useState(
+    order.deliveryFee ? String(order.deliveryFee) : ""
+  );
+
+  const [sendingFee, setSendingFee] = useState(false);
+
   const statusConfig = {
     pending: {
       label: "En attente",
@@ -1349,6 +1376,69 @@ function OrderRow({
   const hasDiscount =
     order.rewardDiscount != null && order.rewardDiscount > 0;
 
+  const isDelivery = order.receptionMode === "delivery";
+
+  const deliveryStatus = order.deliveryStatus;
+
+  const deliveryFee = Number(order.deliveryFee ?? 0);
+
+  const totalToPay = order.total + deliveryFee;
+
+  const hasLocation =
+    order.deliveryLatitude != null &&
+    order.deliveryLongitude != null;
+
+  const mapUrl = hasLocation
+    ? `https://www.google.com/maps/search/?api=1&query=${order.deliveryLatitude},${order.deliveryLongitude}`
+    : null;
+
+  const canProposeFee =
+    isDelivery &&
+    order.status === "pending" &&
+    deliveryStatus === "awaiting_fee";
+
+  const waitingForCustomer =
+    isDelivery &&
+    order.status === "pending" &&
+    deliveryStatus === "awaiting_customer";
+
+  const deliveryAccepted =
+    isDelivery &&
+    deliveryStatus === "accepted";
+
+  const deliveryRefused =
+    isDelivery &&
+    deliveryStatus === "refused";
+
+  const handleProposeFee = async () => {
+    const fee = Number(deliveryFeeInput);
+
+    if (!Number.isInteger(fee) || fee < 0) {
+      toast.error("Entre un montant valide.");
+      return;
+    }
+
+    setSendingFee(true);
+
+    const { error } = await proposeDeliveryFee(
+      order.id,
+      fee
+    );
+
+    setSendingFee(false);
+
+    if (error) {
+      toast.error(
+        "Impossible d'envoyer les frais de livraison."
+      );
+      return;
+    }
+
+    toast.success(
+      "Les frais de livraison ont été envoyés au client."
+    );
+  };
+
   return (
     <article className="px-3 py-1.5 md:px-4 md:py-2">
       <div className="group rounded-2xl bg-card ring-1 ring-border transition-shadow hover:shadow-sm">
@@ -1360,7 +1450,8 @@ function OrderRow({
 
             <div className="min-w-0 flex-1">
 
-              <div className="flex items-center gap-2 min-w-0">
+              <div className="flex flex-wrap items-center gap-2 min-w-0">
+
                 <h3 className="truncate text-sm md:text-[15px] font-semibold tracking-tight">
                   {order.customerName}
                 </h3>
@@ -1373,6 +1464,18 @@ function OrderRow({
                 >
                   {status.label}
                 </span>
+
+                {/* MODE DE RÉCEPTION */}
+                <span
+                  className={
+                    isDelivery
+                      ? "shrink-0 rounded-full bg-blue-100 px-2 py-1 text-[8px] font-bold uppercase tracking-[0.06em] text-blue-700"
+                      : "shrink-0 rounded-full bg-brand-cream px-2 py-1 text-[8px] font-bold uppercase tracking-[0.06em] text-brand-deep"
+                  }
+                >
+                  {isDelivery ? "🛵 Livraison" : "🛍️ Retrait"}
+                </span>
+
               </div>
 
               <p className="mt-0.5 text-[11px] text-muted-foreground">
@@ -1413,12 +1516,164 @@ function OrderRow({
           </div>
         </div>
 
+        {/* INFORMATIONS LIVRAISON */}
+        {isDelivery && (
+          <div className="px-4 pt-3.5 md:px-5">
+
+            <div className="rounded-xl border border-blue-200 bg-blue-50/70 p-3">
+
+              <div className="flex items-start gap-2">
+
+                <MapPin className="mt-0.5 size-4 shrink-0 text-blue-600" />
+
+                <div className="min-w-0 flex-1">
+
+                  <p className="text-xs font-bold text-blue-800">
+                    Livraison
+                  </p>
+
+                  {hasLocation && mapUrl ? (
+                    <a
+                      href={mapUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="mt-1 inline-flex items-center gap-1.5 text-[11px] font-semibold text-blue-700 underline underline-offset-2 hover:text-blue-900"
+                    >
+                      <MapPin className="size-3" />
+                      Voir la position du client
+                    </a>
+                  ) : (
+                    <p className="mt-1 text-[11px] text-rose-600">
+                      Position du client indisponible
+                    </p>
+                  )}
+
+                </div>
+
+              </div>
+
+              {/* PROPOSITION DES FRAIS */}
+              {canProposeFee && (
+                <div className="mt-3 border-t border-blue-200 pt-3">
+
+                  <p className="mb-2 text-[10px] font-medium text-blue-800">
+                    Définir les frais de livraison
+                  </p>
+
+                  <div className="flex gap-2">
+
+                    <div className="relative min-w-0 flex-1">
+
+                      <input
+                        type="number"
+                        min="0"
+                        step="100"
+                        value={deliveryFeeInput}
+                        onChange={(event) =>
+                          setDeliveryFeeInput(event.target.value)
+                        }
+                        placeholder="Ex. 1000"
+                        className="h-9 w-full rounded-lg border border-blue-200 bg-white px-3 pr-16 text-xs outline-none transition focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
+                      />
+
+                      <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[10px] font-semibold text-muted-foreground">
+                        FCFA
+                      </span>
+
+                    </div>
+
+                    <Button
+                      type="button"
+                      size="sm"
+                      disabled={sendingFee}
+                      onClick={handleProposeFee}
+                      className="h-9 shrink-0 gap-1.5 rounded-lg bg-blue-600 px-3 text-xs font-semibold text-white hover:bg-blue-700"
+                    >
+                      <Send className="size-3.5" />
+
+                      {sendingFee
+                        ? "Envoi..."
+                        : "Envoyer"}
+                    </Button>
+
+                  </div>
+
+                </div>
+              )}
+
+              {/* EN ATTENTE DU CLIENT */}
+              {waitingForCustomer && (
+                <div className="mt-3 flex items-center gap-2 rounded-lg bg-white/80 px-3 py-2.5">
+
+                  <Clock className="size-4 shrink-0 text-amber-600" />
+
+                  <div className="min-w-0">
+
+                    <p className="text-[11px] font-bold text-amber-800">
+                      En attente de la réponse du client
+                    </p>
+
+                    <p className="mt-0.5 text-[10px] text-muted-foreground">
+                      Frais proposés :{" "}
+                      <span className="font-bold text-foreground">
+                        {formatFCFA(deliveryFee)}
+                      </span>
+                    </p>
+
+                  </div>
+
+                </div>
+              )}
+
+              {/* CLIENT A ACCEPTÉ */}
+              {deliveryAccepted && (
+                <div className="mt-3 flex items-center gap-2 rounded-lg bg-emerald-50 px-3 py-2.5">
+
+                  <Check className="size-4 shrink-0 text-emerald-600" />
+
+                  <div>
+
+                    <p className="text-[11px] font-bold text-emerald-800">
+                      Livraison acceptée par le client
+                    </p>
+
+                    <p className="mt-0.5 text-[10px] text-emerald-700">
+                      Frais :{" "}
+                      <span className="font-bold">
+                        {formatFCFA(deliveryFee)}
+                      </span>
+                    </p>
+
+                  </div>
+
+                </div>
+              )}
+
+              {/* CLIENT A REFUSÉ */}
+              {deliveryRefused && (
+                <div className="mt-3 flex items-center gap-2 rounded-lg bg-rose-50 px-3 py-2.5">
+
+                  <Trash2 className="size-4 shrink-0 text-rose-500" />
+
+                  <p className="text-[11px] font-bold text-rose-700">
+                    Livraison refusée par le client
+                  </p>
+
+                </div>
+              )}
+
+            </div>
+
+          </div>
+        )}
+
         {/* PRODUITS */}
         <div className="px-4 pt-3.5 md:px-5 md:pt-4">
 
           <div className="rounded-xl bg-muted/30 overflow-hidden">
 
             <div className="flex items-center justify-between px-3 py-2 border-b border-border/60">
+
               <span className="text-[9px] font-bold uppercase tracking-wider text-muted-foreground">
                 Produits
               </span>
@@ -1426,6 +1681,7 @@ function OrderRow({
               <span className="text-[9px] font-bold uppercase tracking-wider text-muted-foreground">
                 Prix
               </span>
+
             </div>
 
             <div className="px-3 py-2.5 md:px-3.5 md:py-3">
@@ -1472,6 +1728,7 @@ function OrderRow({
             </div>
 
           </div>
+
         </div>
 
         {/* RÉCAPITULATIF FINANCIER */}
@@ -1483,6 +1740,7 @@ function OrderRow({
 
               {/* Sous-total */}
               <div className="flex items-center justify-between gap-4">
+
                 <span className="text-[10px] text-brand-cream/65">
                   Sous-total
                 </span>
@@ -1490,20 +1748,40 @@ function OrderRow({
                 <span className="text-xs font-medium">
                   {formatFCFA(subtotal)}
                 </span>
+
               </div>
 
-              {/* Récompense / réduction */}
+              {/* Réduction */}
               {hasDiscount && (
                 <div className="flex items-center justify-between gap-4">
+
                   <span className="min-w-0 truncate text-[10px] text-brand-cream/80">
                     {order.rewardValue
-                       ? `Réduction fidélité 🎁 ${order.rewardValue}`
-                       : "Réduction 🎁"}
+                      ? `Réduction fidélité 🎁 ${order.rewardValue}`
+                      : "Réduction 🎁"}
                   </span>
 
                   <span className="shrink-0 text-xs font-semibold text-brand-gold">
-                      −{formatFCFA(order.rewardDiscount!)}
+                    −{formatFCFA(order.rewardDiscount!)}
                   </span>
+
+                </div>
+              )}
+
+              {/* Frais de livraison */}
+              {isDelivery && (
+                <div className="flex items-center justify-between gap-4">
+
+                  <span className="text-[10px] text-brand-cream/65">
+                    Livraison
+                  </span>
+
+                  <span className="text-xs font-medium">
+                    {deliveryFee > 0
+                      ? formatFCFA(deliveryFee)
+                      : "À définir"}
+                  </span>
+
                 </div>
               )}
 
@@ -1511,17 +1789,25 @@ function OrderRow({
               <div className="mt-2 flex items-end justify-between gap-4 border-t border-brand-cream/15 pt-2">
 
                 <div>
+
                   <p className="text-[9px] uppercase tracking-wider text-brand-cream/60">
                     Total à payer
                   </p>
 
                   <p className="mt-0.5 text-[10px] font-medium text-brand-gold">
-                    +{order.pointsEarned} pépites
+                    {order.pointsAwarded
+                      ? `+${order.pointsAwardedAmount ?? 0} pépites créditées`
+                      : order.status === "pending"
+                        ? "Pépites après validation"
+                        : order.status === "cancelled"
+                          ? "Commande annulée"
+                          : "Pépites non créditées"}
                   </p>
+
                 </div>
 
                 <p className="text-lg md:text-xl font-bold leading-none">
-                  {formatFCFA(order.total)}
+                  {formatFCFA(totalToPay)}
                 </p>
 
               </div>
@@ -1534,34 +1820,43 @@ function OrderRow({
 
         {/* ACTIONS */}
         <div className="flex justify-end px-4 py-2 md:px-5 md:py-2.5">
-  <div className="flex items-center gap-1.5">
-    {order.status === "pending" && (
-      <Button
-        size="icon"
-        variant="ghost"
-        className="size-9 rounded-full bg-emerald-50 hover:bg-emerald-100"
-        onClick={() => onStatus(order.id, "done")}
-        aria-label="Marquer comme livrée"
-      >
-        <Check className="size-4.5 text-emerald-600" />
-      </Button>
-    )}
 
-    {order.status !== "cancelled" && (
-      <Button
-        size="icon"
-        variant="ghost"
-        className="size-9 rounded-full bg-rose-50 hover:bg-rose-100"
-        onClick={() =>
-          onStatus(order.id, "cancelled")
-        }
-        aria-label="Annuler la commande"
-      >
-        <Trash2 className="size-4.5 text-rose-500" />
-      </Button>
-    )}
-  </div>
-</div>
+          <div className="flex items-center gap-1.5">
+
+            {/* VALIDATION */}
+            {order.status === "pending" &&
+              (!isDelivery || deliveryAccepted) && (
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  className="size-9 rounded-full bg-emerald-50 hover:bg-emerald-100"
+                  onClick={() =>
+                    onStatus(order.id, "done")
+                  }
+                  aria-label="Marquer comme livrée"
+                >
+                  <Check className="size-4.5 text-emerald-600" />
+                </Button>
+              )}
+
+            {/* ANNULATION */}
+            {order.status !== "cancelled" && (
+              <Button
+                size="icon"
+                variant="ghost"
+                className="size-9 rounded-full bg-rose-50 hover:bg-rose-100"
+                onClick={() =>
+                  onStatus(order.id, "cancelled")
+                }
+                aria-label="Annuler la commande"
+              >
+                <Trash2 className="size-4.5 text-rose-500" />
+              </Button>
+            )}
+
+          </div>
+
+        </div>
 
       </div>
     </article>

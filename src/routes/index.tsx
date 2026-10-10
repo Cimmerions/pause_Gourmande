@@ -1,6 +1,17 @@
 import { useMemo, useState, useEffect} from "react";
 import { createFileRoute, Link, ClientOnly } from "@tanstack/react-router";
-import { Search, ShoppingCart, Heart, Sparkles, Copy, MapPin, Clock, LayoutDashboard } from "lucide-react";
+import {
+  Search,
+  ShoppingCart,
+  Heart,
+  Sparkles,
+  Copy,
+  MapPin,
+  Clock,
+  LayoutDashboard,
+  UserRound,
+  HeartHandshake
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
@@ -9,7 +20,7 @@ import { useCart } from "@/lib/cart-store";
 import { ProductCard } from "@/components/ProductCard";
 import { LuckyWheel } from "@/components/LuckyWheel";
 import { CartSheet } from "@/components/CartSheet";
-import { findCustomer } from "@/lib/customers";
+import { findCustomer, getCurrentCustomer } from "@/lib/customers";
 import {
   registerCustomerPushSubscription,
   getCustomerPushStatus,
@@ -51,6 +62,8 @@ function Home() {
   const [points, setPoints] = useState(0);
   const [loyaltyPhone, setLoyaltyPhone] = useState("");
   const [referralCode, setReferralCode] = useState("");
+  const [isAuthenticatedCustomer, setIsAuthenticatedCustomer] = useState(false);
+  const [customerLoading, setCustomerLoading] = useState(true);
   const [query, setQuery] = useState("");
   const [cat, setCat] = useState<(typeof CATEGORIES)[number]>("Tout");
   const [location, setLocation] = useState<Location | null>(null);
@@ -81,6 +94,54 @@ function Home() {
 
     loadHomeData();
   }, []);
+
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadCustomerProfile() {
+      try {
+        const customer = await getCurrentCustomer();
+
+        if (cancelled) return;
+
+        if (!customer) {
+          setIsAuthenticatedCustomer(false);
+          return;
+        }
+
+        setIsAuthenticatedCustomer(true);
+        setPoints(customer.points ?? 0);
+        setReferralCode(customer.referral_code ?? "");
+
+        const phone = String(customer.phone ?? "");
+        setLoyaltyPhone(phone);
+
+        if (phone.length === 8) {
+          const status = await getCustomerPushStatus(phone);
+
+          if (!cancelled) {
+            setPushStatus(
+              status === "enabled" ? "enabled" : "disabled"
+            );
+          }
+        }
+      } catch (error) {
+        console.error("Erreur chargement du profil fidélité :", error);
+      } finally {
+        if (!cancelled) {
+          setCustomerLoading(false);
+        }
+      }
+    }
+
+    loadCustomerProfile();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
 
   async function checkLoyalty(phone: string) {
     setLoyaltyPhone(phone);
@@ -215,6 +276,15 @@ function Home() {
               <Heart className="size-4" /> {points} pépites
             </a>
 
+            <Link
+              to="/account"
+              aria-label="Mon compte"
+              title="Mon compte"
+              className="inline-flex items-center justify-center rounded-full h-11 w-11 text-brand-deep/70 hover:text-brand-gold hover:bg-brand-gold/10 transition"
+            >
+              <UserRound className="size-5" />
+            </Link>
+
             <CartSheet>
               <Button
                 variant="default"
@@ -332,7 +402,7 @@ function Home() {
             ))}
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 items-start gap-8">
             {filtered.map((p) => (
               <ProductCard
                 key={p.id}
@@ -396,30 +466,36 @@ function Home() {
               <div className="p-6 bg-brand-warm rounded-[28px] ring-1 ring-brand-gold/5">
 
               <div className="mb-6">
-                <div className="flex items-center gap-2 mb-3">
-                  <div className="size-9 rounded-xl bg-brand-gold/15 flex items-center justify-center">
-                    <span className="text-lg">📱</span>
-              </div>
+                <div className="flex items-start gap-3">
+                  <div className="size-11 shrink-0 rounded-2xl bg-brand-gold/15 text-brand-deep flex items-center justify-center">
+                    <HeartHandshake className="size-5" aria-hidden="true" />
+                  </div>
 
-              <div>
-                <p className="font-semibold text-sm">
-                  Retrouvez votre espace fidélité
-                </p>
-                <p className="text-xs text-muted-foreground">
-                  Entrez votre numéro pour voir vos pépites et votre code parrainage
-                </p>
-              </div>
-            </div>
+                  <div className="min-w-0 flex-1 pt-0.5">
+                    <p className="font-semibold text-base">
+                      Mon Espace Douceur
+                    </p>
 
-            <Input
-              type="tel"
-              inputMode="numeric"
-              maxLength={8}
-              placeholder="Ex. 90123456"
-              value={loyaltyPhone}
-              onChange={(e) => checkLoyalty(e.target.value.replace(/\D/g, ""))}
-              className="h-14 text-center text-lg font-semibold rounded-2xl bg-white border-2 border-brand-gold/20 focus-visible:border-brand-gold focus-visible:ring-brand-gold/20"
-            />
+                    <p className="mt-1 text-sm leading-relaxed text-muted-foreground">
+                      {customerLoading
+                        ? "Chargement de votre espace fidélité…"
+                        : isAuthenticatedCustomer
+                          ? "Retrouvez vos pépites, vos récompenses et votre code de parrainage."
+                          : "Connectez-vous pour retrouver vos pépites, vos récompenses et votre code de parrainage."}
+                    </p>
+                  </div>
+                </div>
+
+                {!customerLoading && !isAuthenticatedCustomer && (
+                  <div className="mt-6">
+                    <Link
+                      to="/account"
+                      className="flex w-full items-center justify-center h-12 rounded-2xl bg-brand-deep text-white font-semibold hover:opacity-90 transition-opacity"
+                    >
+                      Se connecter
+                    </Link>
+                  </div>
+                )}
 
             {loyaltyPhone.length === 8 && pushStatus !== "enabled" && (
              <div className="w-full mt-4 rounded-2xl border border-brand-gold/30 bg-brand-gold/5 p-4">

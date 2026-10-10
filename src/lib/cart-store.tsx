@@ -9,7 +9,6 @@ import {
 } from "react";
 import type { Product } from "./products";
 import { createOrder } from "./orders";
-import { useLoyaltyReward } from "./customers";
 
 export type CartAddon = {
   productId: string;
@@ -45,8 +44,23 @@ export type Order = {
   lines: OrderLine[];
   total: number;
   pointsEarned: number;
+  pointsAwarded?: boolean;
+  pointsAwardedAmount?: number;
   usedPoints: number;
   status: "pending" | "done" | "cancelled";
+
+  // Livraison
+  receptionMode?: "pickup" | "delivery" | null;
+  deliveryLatitude?: number | null;
+  deliveryLongitude?: number | null;
+  deliveryFee?: number;
+  deliveryStatus?:
+    | "awaiting_fee"
+    | "awaiting_customer"
+    | "accepted"
+    | "refused"
+    | null;
+
   rewardSource?: string | null;
   rewardValue?: string | null;
   rewardDiscount?: number | null;
@@ -63,6 +77,11 @@ type SubmitInput = {
   referralCode?: string;
   customerId?: number;
   loyaltyReward?: boolean;
+
+  // Livraison
+  receptionMode?: "pickup" | "delivery";
+  deliveryLatitude?: number | null;
+  deliveryLongitude?: number | null;
 };
 
 type CartContextValue = {
@@ -218,6 +237,20 @@ export function CartProvider({ children }: { children: ReactNode }) {
         total,
         pointsEarned,
         usedPoints: input.usedPoints ?? 0,
+        receptionMode: input.receptionMode ?? "pickup",
+        deliveryLatitude:
+          input.receptionMode === "delivery"
+            ? input.deliveryLatitude ?? null
+            : null,
+        deliveryLongitude:
+          input.receptionMode === "delivery"
+            ? input.deliveryLongitude ?? null
+            : null,
+        deliveryFee: 0,
+        deliveryStatus:
+         input.receptionMode === "delivery"
+          ? "awaiting_fee"
+          : null,
         status: "pending",
       };
 
@@ -233,34 +266,35 @@ export function CartProvider({ children }: { children: ReactNode }) {
         return null;
       }
 
-      // Ajouter le code de parrainage réellement accepté
-      if (createdOrder.acceptedReferralCode) {
-        order.referralCode = createdOrder.acceptedReferralCode;
-      }
 
-      if (
-        input.rewardId &&
-        input.loyaltyReward
-      ) {
-        const rewardResult = await useLoyaltyReward(
-          input.rewardId,
-          order.id,
-          order.phone
-        );
-      
-        if (rewardResult.error) {
-          console.error(
-            "Erreur utilisation récompense fidélité :",
-            rewardResult.error
-          );
+        // Utiliser les données réellement enregistrées par Supabase
+        const savedOrder = createdOrder.data;
+
+        if (!savedOrder?.id) {
+          console.error("La commande créée n'a pas retourné d'identifiant.");
+          return null;
         }
-      }
 
-      setOrders((os) => [order, ...os]);
+        const confirmedOrder: Order = {
+          ...order,
+          id: savedOrder.id,
+          total: Number(savedOrder.total),
+          createdAt: savedOrder.created_at
+            ? new Date(savedOrder.created_at).getTime()
+            : order.createdAt,
+          status: savedOrder.status,
+          rewardSource: savedOrder.reward_source ?? null,
+          rewardValue: savedOrder.reward_value ?? null,
+          rewardDiscount: savedOrder.reward_discount ?? null,
+          referralCode: createdOrder.acceptedReferralCode ?? undefined,
+        };
 
-      setItems([]);
+        setOrders((os) => [confirmedOrder, ...os]);
 
-      return order;
+        setItems([]);
+
+        return confirmedOrder;
+
 
     },
     [items]
