@@ -110,24 +110,71 @@ useEffect(() => {
       return;
     }
 
+    
     setSubmitting(true);
 
     try {
       if (mode === "signup") {
+        const normalizedEmail = email.trim().toLowerCase();
+        const normalizedPhone = phone.trim();
+
+        const { data: phoneExists, error: phoneCheckError } =
+          await supabase.rpc("check_signup_phone", {
+          p_phone: normalizedPhone,
+        });
+
+        if (phoneCheckError) {
+          console.error("Erreur vérification téléphone :", phoneCheckError);
+          toast.error("Impossible de vérifier le numéro. Réessaie.");
+          return;
+        }
+
+        if (phoneExists) {
+          toast.error(
+            "Ce numéro est déjà associé à une fiche client. Utilise un autre numéro ou demande la vérification de ton ancienne fiche."
+          );
+          return;
+        }
+
         const { data, error } = await signUp(
-          email,
+          normalizedEmail,
           password,
-          name,
-          phone
+          name.trim(),
+          normalizedPhone
         );
 
+        
         if (error) {
-          toast.error(error.message);
+          console.error("Erreur inscription :", error);
+
+          if (
+            error.message.toLowerCase().includes("already registered") ||
+            error.message.toLowerCase().includes("already exists")
+          ) {
+            toast.error(
+              "Cette adresse email est peut-être déjà utilisée. Essaie de te connecter ou de récupérer ton accès."
+            );
+          } else {
+            toast.error("Impossible de créer le compte. Réessaie.");
+          }
+
           return;
         }
 
         if (!data.user) {
           toast.error("Impossible de créer le compte.");
+          return;
+        }
+
+      // Supabase peut masquer l'existence d'un email déjà inscrit.
+        if (
+          !data.session &&
+          data.user.identities &&
+          data.user.identities.length === 0
+        ) {
+          toast.error(
+            "Cette adresse email est peut-être déjà associée à un compte. Essaie de te connecter."
+          );
           return;
         }
 
