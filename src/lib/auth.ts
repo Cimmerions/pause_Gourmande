@@ -6,7 +6,7 @@ export async function signUp(
   name?: string,
   phone?: string
 ) {
-  const redirectUrl = `${window.location.origin}/account`;
+  const redirectUrl = `${window.location.origin}/auth/confirm`;
 
   const { data, error } = await supabase.auth.signUp({
     email: email.trim().toLowerCase(),

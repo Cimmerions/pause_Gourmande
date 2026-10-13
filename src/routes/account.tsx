@@ -30,26 +30,59 @@ function AccountPage() {
   const [password, setPassword] = useState("");
 
 useEffect(() => {
+  let active = true;
+
   async function loadUser() {
-    const { user } = await getCurrentUser();
+    try {
+      const { user } = await getCurrentUser();
 
-    if (user) {
-      setUser({
-        id: user.id,
-        email: user.email,
-      });
+      if (!active) return;
 
-      const customer = await getCurrentCustomer();
+      if (user) {
+        setUser({
+          id: user.id,
+          email: user.email,
+        });
 
-      if (customer) {
-        setCustomerName(customer.name?.trim() || "Gourmand");
+        let customer = await getCurrentCustomer();
+
+        // Si aucune fiche n'est liée, tenter l'initialisation
+        // uniquement avec une session authentifiée.
+        if (!customer) {
+          const { error } = await supabase.rpc(
+            "ensure_my_customer_profile"
+          );
+
+          if (!error) {
+            customer = await getCurrentCustomer();
+          } else {
+            console.error(
+              "Initialisation du profil client impossible :",
+              error
+            );
+          }
+        }
+
+        if (!active) return;
+
+        if (customer) {
+          setCustomerName(customer.name?.trim() || "Gourmand");
+        }
+      }
+    } catch (error) {
+      console.error("Erreur de chargement du compte :", error);
+    } finally {
+      if (active) {
+        setLoading(false);
       }
     }
-
-    setLoading(false);
   }
 
   loadUser();
+
+  return () => {
+    active = false;
+  };
 }, []);
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
