@@ -29,6 +29,7 @@ import {
 import { getActiveLocation, type Location } from "@/lib/locations";
 import { LocationMap } from "@/components/LocationMap.client";
 import { getLoyaltySettings } from "@/lib/loyalty";
+import { getCustomerOrders } from "@/lib/orders";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -74,6 +75,7 @@ function Home() {
 >("disabled");
   const [enablingNotifications, setEnablingNotifications] = useState(false);
   const [needsIOSInstall, setNeedsIOSInstall] = useState(false);
+  const [hasPendingDeliveryAction, setHasPendingDeliveryAction] = useState(false);
 
   useEffect(() => {
     setNeedsIOSInstall(needsIOSHomeScreenInstall());
@@ -107,12 +109,25 @@ function Home() {
 
         if (!customer) {
           setIsAuthenticatedCustomer(false);
+          setHasPendingDeliveryAction(false);
           return;
         }
 
         setIsAuthenticatedCustomer(true);
         setPoints(customer.points ?? 0);
         setReferralCode(customer.referral_code ?? "");
+
+        // Vérifier si une livraison attend la décision du client
+        const { data: orders, error: ordersError } = await getCustomerOrders();
+
+        if (!cancelled && !ordersError) {
+          setHasPendingDeliveryAction(
+            (orders ?? []).some(
+              (order: { delivery_status?: string | null }) =>
+                order.delivery_status === "awaiting_customer"
+            )
+          );
+        }
 
         const phone = String(customer.phone ?? "");
         setLoyaltyPhone(phone);
@@ -278,11 +293,26 @@ function Home() {
 
             <Link
               to="/account"
-              aria-label="Mon compte"
-              title="Mon compte"
-              className="inline-flex items-center justify-center rounded-full h-11 w-11 text-brand-deep/70 hover:text-brand-gold hover:bg-brand-gold/10 transition"
+              aria-label={
+                hasPendingDeliveryAction
+                  ? "Mon compte — une livraison attend votre décision"
+                  : "Mon compte"
+              }
+              title={
+                hasPendingDeliveryAction
+                  ? "Une livraison attend votre décision"
+                  : "Mon compte"
+              }
+              className="relative inline-flex items-center justify-center rounded-full h-11 w-11 text-brand-deep/70 hover:text-brand-gold hover:bg-brand-gold/10 transition"
             >
               <UserRound className="size-5" />
+
+              {hasPendingDeliveryAction && (
+                <span
+                  aria-hidden="true"
+                  className="absolute top-1 right-1 size-2.5 rounded-full bg-orange-500 ring-2 ring-white"
+                />
+              )}
             </Link>
 
             <CartSheet>
