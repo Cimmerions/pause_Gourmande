@@ -5,7 +5,10 @@ export type NotificationType =
   | "order_confirmed"
   | "order_cancelled"
   | "referral_reward"
-  | "loyalty_reward";
+  | "loyalty_reward"
+  | "delivery_fee_proposed"
+  | "delivery_accepted"
+  | "delivery_refused";
 
 export type Notification = {
   id: number;
@@ -72,7 +75,7 @@ export async function getNotifications(limit = 30) {
     .not(
       "type",
       "in",
-      '("order_confirmed","order_cancelled")'
+      '("order_confirmed","order_cancelled","delivery_fee_proposed")'
     )
     .order("created_at", {
       ascending: false,
@@ -105,7 +108,7 @@ export async function getUnreadNotificationCount() {
     .not(
       "type",
       "in",
-      '("order_confirmed","order_cancelled")'
+      '("order_confirmed","order_cancelled","delivery_fee_proposed")'
     );
 
   if (error) {
@@ -161,7 +164,7 @@ export async function markAllNotificationsAsRead() {
     .not(
       "type",
       "in",
-      '("order_confirmed","order_cancelled")'
+      '("order_confirmed","order_cancelled","delivery_fee_proposed")'
     );
 
   if (error) {
@@ -196,7 +199,8 @@ export function subscribeToNotifications(
         // les confirmations et annulations.
         if (
           notification.type === "order_confirmed" ||
-          notification.type === "order_cancelled"
+          notification.type === "order_cancelled" ||
+          notification.type === "delivery_fee_proposed"
         ) {
           return;
         }
