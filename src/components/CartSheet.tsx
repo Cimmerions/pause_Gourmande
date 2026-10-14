@@ -12,6 +12,8 @@ import { formatFCFA } from "../lib/products";
 import { findCustomer, getCurrentCustomer } from "@/lib/customers";
 import { getRewards } from "@/lib/rewards";
 import { getLoyaltySettings } from "@/lib/loyalty";
+import { useNavigate } from "@tanstack/react-router";
+import { getCurrentUser } from "@/lib/auth";
 import {
   registerCustomerPushSubscription,
   getCustomerPushStatus,
@@ -20,6 +22,7 @@ import {
 
 export function CartSheet({ children }: { children: React.ReactNode }) {
   const { items, setQty, remove, setNote, total, submitOrder } = useCart();
+  const navigate = useNavigate();
   const subtotal = total;
   const [open, setOpen] = useState(false);
   const [name, setName] = useState("");
@@ -184,7 +187,7 @@ export function CartSheet({ children }: { children: React.ReactNode }) {
     }
   }
 
-  
+
   const getDeliveryLocation = () => {
     if (!navigator.geolocation) {
       toast.error("La géolocalisation n'est pas disponible sur cet appareil.");
@@ -276,8 +279,19 @@ export function CartSheet({ children }: { children: React.ReactNode }) {
   };
 
   const validate = async () => {
-    if (!items.length) return;
-    if (!name.trim() || !phone.trim()) {
+  if (!items.length) return;
+
+  const { user } = await getCurrentUser();
+
+  if (!user) {
+    sessionStorage.setItem("pause-gourmande:redirect-after-login", "/");
+    toast.info("Connecte-toi pour confirmer ta commande.");
+    setOpen(false);
+    navigate({ to: "/account" });
+    return;
+  }
+
+  if (!name.trim() || !phone.trim()) {
       toast.error("Merci de renseigner votre nom et téléphone.");
       return;
     }

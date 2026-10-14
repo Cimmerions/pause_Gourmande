@@ -339,7 +339,7 @@ function MesCommandesPage() {
                         {waitingForCustomer && (
                           <div className="rounded-xl border border-primary/20 bg-primary/5 p-4">
                             <p className="text-sm font-semibold">
-                              Frais de livraison proposés
+                              Frais de livraison estimés
                             </p>
 
                             <p className="mt-1 text-base font-bold text-primary">
@@ -347,9 +347,7 @@ function MesCommandesPage() {
                             </p>
 
                             <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
-                              La vendeuse vous propose ces frais
-                              pour livrer votre commande à votre
-                              position.
+                              Consultez votre espace client pour valider la livraison.
                             </p>
 
                             <div className="mt-4 grid grid-cols-2 gap-3">

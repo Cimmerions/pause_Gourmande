@@ -247,6 +247,14 @@ useEffect(() => {
 
       toast.success("Connexion réussie !");
 
+      const redirectToShop =
+        sessionStorage.getItem("pause-gourmande:redirect-after-login") === "/";
+
+      if (redirectToShop) {
+        sessionStorage.removeItem("pause-gourmande:redirect-after-login");
+        navigate({ to: "/" });
+      }
+
       }
     } finally {
       setSubmitting(false);
