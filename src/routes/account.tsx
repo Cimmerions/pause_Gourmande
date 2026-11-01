@@ -110,31 +110,13 @@ useEffect(() => {
       return;
     }
 
-    
+
     setSubmitting(true);
 
     try {
       if (mode === "signup") {
         const normalizedEmail = email.trim().toLowerCase();
         const normalizedPhone = phone.trim();
-
-        const { data: phoneExists, error: phoneCheckError } =
-          await supabase.rpc("check_signup_phone", {
-          p_phone: normalizedPhone,
-        });
-
-        if (phoneCheckError) {
-          console.error("Erreur vérification téléphone :", phoneCheckError);
-          toast.error("Impossible de vérifier le numéro. Réessaie.");
-          return;
-        }
-
-        if (phoneExists) {
-          toast.error(
-            "Ce numéro est déjà associé à une fiche client. Utilise un autre numéro ou demande la vérification de ton ancienne fiche."
-          );
-          return;
-        }
 
         const { data, error } = await signUp(
           normalizedEmail,
@@ -143,20 +125,37 @@ useEffect(() => {
           normalizedPhone
         );
 
-        
+
         if (error) {
           console.error("Erreur inscription :", error);
 
+
+          const errorMessage = error.message.toLowerCase();
+
           if (
-            error.message.toLowerCase().includes("already registered") ||
-            error.message.toLowerCase().includes("already exists")
+            errorMessage.includes("already registered") ||
+            errorMessage.includes("already exists")
           ) {
             toast.error(
               "Cette adresse email est peut-être déjà utilisée. Essaie de te connecter ou de récupérer ton accès."
             );
+          } else if (
+            errorMessage.includes("hook") ||
+            errorMessage.includes("before_user_created") ||
+            errorMessage.includes("inscription impossible")
+          ) {
+            toast.error(
+              "Ce numéro est déjà associé à un compte client. Essaie de te connecter si tu possèdes déjà un compte, ou utilise un autre numéro."
+            );
           } else {
-            toast.error("Impossible de créer le compte. Réessaie.");
+            console.error("Erreur inscription :", error);
+            toast.error(
+              "Impossible de créer le compte. Vérifie tes informations et réessaie."
+            );
           }
+
+          return;
+
 
           return;
         }
@@ -228,7 +227,7 @@ useEffect(() => {
           return;
         }
 
-        
+
         const customer = await getCurrentCustomer();
 
         if (!customer) {

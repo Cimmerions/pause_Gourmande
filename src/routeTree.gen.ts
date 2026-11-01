@@ -10,6 +10,7 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as OrdersPageRouteImport } from './routes/orders-page'
+import { Route as DriverRouteImport } from './routes/driver'
 import { Route as DashboardRouteImport } from './routes/dashboard'
 import { Route as AdminLoginRouteImport } from './routes/admin-login'
 import { Route as AccountRouteImport } from './routes/account'
@@ -19,6 +20,11 @@ import { Route as AuthConfirmRouteImport } from './routes/auth.confirm'
 const OrdersPageRoute = OrdersPageRouteImport.update({
   id: '/orders-page',
   path: '/orders-page',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DriverRoute = DriverRouteImport.update({
+  id: '/driver',
+  path: '/driver',
   getParentRoute: () => rootRouteImport,
 } as any)
 const DashboardRoute = DashboardRouteImport.update({
@@ -52,6 +58,7 @@ export interface FileRoutesByFullPath {
   '/account': typeof AccountRoute
   '/admin-login': typeof AdminLoginRoute
   '/dashboard': typeof DashboardRoute
+  '/driver': typeof DriverRoute
   '/orders-page': typeof OrdersPageRoute
   '/auth/confirm': typeof AuthConfirmRoute
 }
@@ -60,6 +67,7 @@ export interface FileRoutesByTo {
   '/account': typeof AccountRoute
   '/admin-login': typeof AdminLoginRoute
   '/dashboard': typeof DashboardRoute
+  '/driver': typeof DriverRoute
   '/orders-page': typeof OrdersPageRoute
   '/auth/confirm': typeof AuthConfirmRoute
 }
@@ -69,6 +77,7 @@ export interface FileRoutesById {
   '/account': typeof AccountRoute
   '/admin-login': typeof AdminLoginRoute
   '/dashboard': typeof DashboardRoute
+  '/driver': typeof DriverRoute
   '/orders-page': typeof OrdersPageRoute
   '/auth/confirm': typeof AuthConfirmRoute
 }
@@ -79,6 +88,7 @@ export interface FileRouteTypes {
     | '/account'
     | '/admin-login'
     | '/dashboard'
+    | '/driver'
     | '/orders-page'
     | '/auth/confirm'
   fileRoutesByTo: FileRoutesByTo
@@ -87,6 +97,7 @@ export interface FileRouteTypes {
     | '/account'
     | '/admin-login'
     | '/dashboard'
+    | '/driver'
     | '/orders-page'
     | '/auth/confirm'
   id:
@@ -95,6 +106,7 @@ export interface FileRouteTypes {
     | '/account'
     | '/admin-login'
     | '/dashboard'
+    | '/driver'
     | '/orders-page'
     | '/auth/confirm'
   fileRoutesById: FileRoutesById
@@ -104,6 +116,7 @@ export interface RootRouteChildren {
   AccountRoute: typeof AccountRoute
   AdminLoginRoute: typeof AdminLoginRoute
   DashboardRoute: typeof DashboardRoute
+  DriverRoute: typeof DriverRoute
   OrdersPageRoute: typeof OrdersPageRoute
   AuthConfirmRoute: typeof AuthConfirmRoute
 }
@@ -115,6 +128,13 @@ declare module '@tanstack/react-router' {
       path: '/orders-page'
       fullPath: '/orders-page'
       preLoaderRoute: typeof OrdersPageRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/driver': {
+      id: '/driver'
+      path: '/driver'
+      fullPath: '/driver'
+      preLoaderRoute: typeof DriverRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/dashboard': {
@@ -160,6 +180,7 @@ const rootRouteChildren: RootRouteChildren = {
   AccountRoute: AccountRoute,
   AdminLoginRoute: AdminLoginRoute,
   DashboardRoute: DashboardRoute,
+  DriverRoute: DriverRoute,
   OrdersPageRoute: OrdersPageRoute,
   AuthConfirmRoute: AuthConfirmRoute,
 }

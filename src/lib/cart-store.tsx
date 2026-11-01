@@ -47,7 +47,7 @@ export type Order = {
   pointsAwarded?: boolean;
   pointsAwardedAmount?: number;
   usedPoints: number;
-  status: "pending" | "done" | "cancelled";
+  status: "pending" | "preparing" | "done" | "cancelled";
 
   // Livraison
   receptionMode?: "pickup" | "delivery" | null;
@@ -60,6 +60,7 @@ export type Order = {
     | "accepted"
     | "refused"
     | null;
+  assignedDriverId?: string | null;
 
   rewardSource?: string | null;
   rewardValue?: string | null;
@@ -283,6 +284,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
         const confirmedOrder: Order = {
           ...order,
           id: savedOrder.id,
+          time: savedOrder.time ?? order.time,
           total: Number(savedOrder.total),
           createdAt: savedOrder.created_at
             ? new Date(savedOrder.created_at).getTime()

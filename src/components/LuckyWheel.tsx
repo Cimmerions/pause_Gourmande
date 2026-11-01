@@ -29,7 +29,11 @@ type Customer = {
   points: number | null;
 };
 
-export function LuckyWheel() {
+type LuckyWheelProps = {
+  onPointsChange?: (points: number) => void;
+};
+
+export function LuckyWheel({ onPointsChange }: LuckyWheelProps) {
   const [rotation, setRotation] = useState(0);
   const [spinning, setSpinning] = useState(false);
   const [used, setUsed] = useState(false);
@@ -137,11 +141,14 @@ export function LuckyWheel() {
           const updatedCustomer = await getCurrentCustomer();
           if (updatedCustomer) {
             setCustomer(updatedCustomer as Customer);
+            onPointsChange?.(updatedCustomer.points ?? 0);
           }
 
           toast.success(`🎁 ${label}`, {
             description:
-              label.includes("Réessayez") || label.includes("Oops")
+              label.includes("pépites")
+                ? "Les pépites ont été ajoutées à votre compte."
+                : label.includes("Réessayez") || label.includes("Oops")
                 ? "Oops! Retentez votre chance demain !"
                 : "Bravo! Récompense disponible sur votre prochaine commande.",
           });

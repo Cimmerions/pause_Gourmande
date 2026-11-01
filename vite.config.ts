@@ -21,16 +21,18 @@ export default defineConfig(({ mode }) => ({
     },
   },
 
-  server: {
-    host: "0.0.0.0",
+    server: {
+      host: "0.0.0.0",
 
-    ...(mode === "development"
-      ? {}
-      : {
-          https: {
-            key: fs.readFileSync("./certs/localhost-key.pem"),
-            cert: fs.readFileSync("./certs/localhost.pem"),
-          },
-        }),
-  },
+      ...(process.env.VITE_HTTPS === "true" &&
+      fs.existsSync("./certs/localhost-key.pem") &&
+      fs.existsSync("./certs/localhost.pem")
+        ? {
+            https: {
+              key: fs.readFileSync("./certs/localhost-key.pem"),
+              cert: fs.readFileSync("./certs/localhost.pem"),
+            },
+          }
+        : {}),
+    },
 }));

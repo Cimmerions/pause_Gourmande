@@ -9,16 +9,44 @@ import { Minus, Plus, Trash2, ShoppingBag, Bell, MapPin } from "lucide-react";
 import { toast } from "sonner";
 import { useCart } from "@/lib/cart-store";
 import { formatFCFA } from "../lib/products";
-import { findCustomer, getCurrentCustomer } from "@/lib/customers";
+import { getCurrentCustomer } from "@/lib/customers";
 import { getRewards } from "@/lib/rewards";
 import { getLoyaltySettings } from "@/lib/loyalty";
 import { useNavigate } from "@tanstack/react-router";
 import { getCurrentUser } from "@/lib/auth";
 import {
+  getAppSettings,
+  DEFAULT_ORDER_SETTINGS,
+} from "@/lib/settings";
+import { supabase } from "@/lib/supabase";
+import {
   registerCustomerPushSubscription,
   getCustomerPushStatus,
   needsIOSHomeScreenInstall,
 } from "@/lib/push";
+
+function getLomeIsoWeekday(daysFromToday = 0): number {
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Africa/Lome",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(new Date());
+
+  const getPart = (type: string) =>
+    parts.find((part) => part.type === type)?.value ?? "0";
+
+  const date = new Date(
+    Date.UTC(
+      Number(getPart("year")),
+      Number(getPart("month")) - 1,
+      Number(getPart("day")) + daysFromToday,
+    ),
+  );
+
+  const weekday = date.getUTCDay();
+  return weekday === 0 ? 7 : weekday;
+}
 
 export function CartSheet({ children }: { children: React.ReactNode }) {
   const { items, setQty, remove, setNote, total, submitOrder } = useCart();
@@ -49,9 +77,148 @@ export function CartSheet({ children }: { children: React.ReactNode }) {
 
   const [customerPoints, setCustomerPoints] = useState(0);
   const [mode, setMode] = useState<"today" | "tomorrow">("today");
-  const [time, setTime] = useState("12:30");
+  const [time, setTime] = useState("");
+
+  const [orderSettings, setOrderSettings] = useState(DEFAULT_ORDER_SETTINGS);
+
+  const openDays = Array.isArray(orderSettings.open_days)
+    ? orderSettings.open_days
+    : DEFAULT_ORDER_SETTINGS.open_days;
+
+  const todayIsOpen = openDays.includes(getLomeIsoWeekday());
+  const tomorrowIsOpen = openDays.includes(getLomeIsoWeekday(1));
+
+  const canOrderToday = todayIsOpen;
+  const canOrderTomorrow = tomorrowIsOpen;
+
+  const [availableSlots, setAvailableSlots] = useState<
+    { slot_time: string; available: boolean; remaining: number }[]
+  >([]);
+  const [loadingSlots, setLoadingSlots] = useState(false);
+  const [slotsError, setSlotsError] = useState("");
+
+  useEffect(() => {
+    if (!open) return;
+
+    let cancelled = false;
+
+    async function loadOrderSettings() {
+      try {
+        const settings = await getAppSettings();
+
+        if (!cancelled && settings?.order_settings) {
+          setOrderSettings({
+            ...DEFAULT_ORDER_SETTINGS,
+            ...settings.order_settings,
+          });
+        }
+      } catch (error) {
+        console.error("Erreur de chargement des réglages :", error);
+      }
+    }
+
+    void loadOrderSettings();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [open]);
+
+  useEffect(() => {
+    if (!canOrderToday && canOrderTomorrow) {
+      setMode("tomorrow");
+      setTime("");
+    } else if (canOrderToday && !canOrderTomorrow) {
+      setMode("today");
+      setTime("");
+    } else if (!canOrderToday && !canOrderTomorrow) {
+      setTime("");
+    }
+  }, [canOrderToday, canOrderTomorrow]);
+
+  useEffect(() => {
+    if (!open) return;
+
+    let cancelled = false;
+
+    async function loadSlots() {
+      setLoadingSlots(true);
+      setSlotsError("");
+      setAvailableSlots([]);
+      setTime("");
+
+      try {
+        const parts = new Intl.DateTimeFormat("en-GB", {
+          timeZone: "Africa/Lome",
+          year: "numeric",
+          month: "2-digit",
+          day: "2-digit",
+        }).formatToParts(new Date());
+
+        const getPart = (type: string) =>
+          parts.find((part) => part.type === type)?.value ?? "";
+
+        const targetDate = new Date(
+          Date.UTC(
+            Number(getPart("year")),
+            Number(getPart("month")) - 1,
+            Number(getPart("day")) + (mode === "tomorrow" ? 1 : 0),
+          ),
+        )
+          .toISOString()
+          .slice(0, 10);
+
+        const { data, error } = await supabase.rpc(
+          "get_available_order_slots",
+          { p_date: targetDate },
+        );
+
+        if (error) throw error;
+        if (cancelled) return;
+
+        const slots = (data ?? []) as {
+          slot_time: string;
+          available: boolean;
+          remaining: number;
+        }[];
+
+        setAvailableSlots(slots);
+
+        if (!slots.some((slot) => slot.available)) {
+          setSlotsError(
+            mode === "today"
+              ? "Aucun créneau disponible aujourd’hui."
+              : "Aucun créneau disponible demain.",
+          );
+        }
+      } catch (error) {
+        console.error("Erreur de chargement des créneaux :", error);
+
+        if (!cancelled) {
+          setSlotsError("Impossible de charger les créneaux. Réessayez.");
+        }
+      } finally {
+        if (!cancelled) setLoadingSlots(false);
+      }
+    }
+
+    void loadSlots();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [open, mode]);
+
   const [submitting, setSubmitting] = useState(false);
   const [receptionMode, setReceptionMode] = useState<"pickup" | "delivery">("pickup");
+
+  useEffect(() => {
+  if (!orderSettings.delivery_enabled && receptionMode === "delivery") {
+    setReceptionMode("pickup");
+    setDeliveryLatitude(null);
+    setDeliveryLongitude(null);
+  }
+}, [orderSettings.delivery_enabled, receptionMode]);
 
   const [deliveryLatitude, setDeliveryLatitude] = useState<number | null>(null);
 
@@ -99,7 +266,7 @@ export function CartSheet({ children }: { children: React.ReactNode }) {
       await loadCustomer(phone);
 
       // Recherche récompenses
-      const rewardsData = await getRewards(phone);
+      const rewardsData = await getRewards();
 
       setRewards(rewardsData);
 
@@ -138,24 +305,24 @@ export function CartSheet({ children }: { children: React.ReactNode }) {
     };
   }, [phone]);
 
-  async function loadCustomer(phone: string) {
-    if (phone.length !== 8) {
-      setCustomer(null);
-      setCustomerPoints(0);
-      return;
-    }
-
-    const c = await findCustomer(phone);
-
-    if (!c) {
-      setCustomer(null);
-      setCustomerPoints(0);
-      return;
-    }
-
-    setCustomer(c);
-    setCustomerPoints(c.points ?? 0);
+async function loadCustomer(phone: string) {
+  if (phone.length !== 8) {
+    setCustomer(null);
+    setCustomerPoints(0);
+    return;
   }
+
+  const c = await getCurrentCustomer();
+
+  if (!c || String(c.phone ?? "") !== phone) {
+    setCustomer(null);
+    setCustomerPoints(0);
+    return;
+  }
+
+  setCustomer(c);
+  setCustomerPoints(c.points ?? 0);
+}
 
   async function enableCustomerNotifications() {
     if (phone.length !== 8) {
@@ -281,6 +448,58 @@ export function CartSheet({ children }: { children: React.ReactNode }) {
   const validate = async () => {
   if (!items.length) return;
 
+  if (!canOrderToday && !canOrderTomorrow) {
+    toast.error("Aucune commande n’est disponible aujourd’hui ni demain.");
+    return;
+  }
+
+  if (mode === "today" && !canOrderToday) {
+    toast.error(
+      !todayIsOpen
+        ? "Pause Gourmande est fermée aujourd’hui."
+        : "Les commandes pour aujourd’hui sont désactivées.",
+    );
+    return;
+  }
+
+  if (mode === "tomorrow" && !canOrderTomorrow) {
+    toast.error(
+      !tomorrowIsOpen
+        ? "Pause Gourmande est fermée demain."
+        : "Les réservations pour demain sont désactivées.",
+    );
+    return;
+  }
+
+  if (!orderSettings.delivery_enabled && receptionMode === "delivery") {
+    setReceptionMode("pickup");
+    setDeliveryLatitude(null);
+    setDeliveryLongitude(null);
+    toast.info("La livraison n'est plus disponible. Optez pour le retrait.");
+    return;
+  }
+
+  if (loadingSlots) {
+    toast.info("Chargement des créneaux, veuillez patienter.");
+    return;
+  }
+
+  if (!time) {
+    toast.error("Veuillez choisir un créneau.");
+    return;
+  }
+
+  const slot = availableSlots.find(
+    (item) => item.slot_time === time && item.available,
+  );
+
+  if (!slot) {
+    toast.error(
+      "Ce créneau n'est plus disponible. Choisissez-en un autre.",
+    );
+    return;
+  }
+
   const { user } = await getCurrentUser();
 
   if (!user) {
@@ -342,15 +561,15 @@ export function CartSheet({ children }: { children: React.ReactNode }) {
       ? "🎉 Le parrainage a bien été pris en compte."
       : "";
 
-      toast.success("Commande envoyée !", {
-        description: `${referralMessage}${
-          receptionMode === "delivery"
-            ? " Livraison • Les frais seront confirmés par la vendeuse."
-            : " Retrait sur place."
-        } Vos pépites seront créditées après validation de la commande par la vendeuse. ${
-          mode === "today" ? "Aujourd'hui" : "Demain"
-        } à ${time}.`,
-      });
+toast.success("Commande envoyée !", {
+  description: `${referralMessage}${
+    receptionMode === "delivery"
+      ? " Livraison • Les frais seront confirmés par la vendeuse."
+      : " Retrait sur place."
+  } Ta commande est en attente de validation. Prévue pour ${
+    mode === "today" ? "aujourd’hui" : "demain"
+  } à ${time.replace(":", " h ")}.`,
+});
 
     setSubmitting(false);
     setOpen(false);
@@ -672,11 +891,28 @@ export function CartSheet({ children }: { children: React.ReactNode }) {
 
                 <label
                   htmlFor="delivery"
-                  className="flex items-center gap-2 rounded-2xl border p-3 cursor-pointer"
-                  data-checked={receptionMode === "delivery"}
+                  className={`flex items-center gap-2 rounded-2xl border p-3 ${
+                  orderSettings.delivery_enabled
+                    ? "cursor-pointer"
+                    : "cursor-not-allowed opacity-60"
+                  }`}
+                  data-checked={
+                    receptionMode === "delivery" && orderSettings.delivery_enabled
+                  }
                 >
-                  <RadioGroupItem id="delivery" value="delivery" />
-                  <span className="text-sm font-medium">Livraison</span>
+                  <RadioGroupItem
+                    id="delivery"
+                    value="delivery"
+                    disabled={!orderSettings.delivery_enabled}
+                  />
+                  <span>
+                    <span className="block text-sm font-medium">Livraison</span>
+                    {!orderSettings.delivery_enabled && (
+                      <span className="block text-xs text-muted-foreground">
+                        Indisponible — La livraison n’est pas proposée actuellement.
+                      </span>
+                    )}
+                  </span>
                 </label>
               </RadioGroup>
 
@@ -721,35 +957,152 @@ export function CartSheet({ children }: { children: React.ReactNode }) {
                 </div>
               )}
 
-              <p className="text-xs font-bold uppercase tracking-widest text-brand-gold pt-2">
-                Réservation
-              </p>
-              <RadioGroup
-                value={mode}
-                onValueChange={(v) => setMode(v as "today" | "tomorrow")}
-                className="grid grid-cols-2 gap-2"
+
+<p className="text-xs font-bold uppercase tracking-widest text-brand-gold pt-2">
+  Réservation
+</p>
+
+
+<div className="space-y-3">
+  <div className="grid grid-cols-2 gap-2 rounded-2xl bg-muted p-1">
+    <button
+      type="button"
+      disabled={!canOrderToday}
+      onClick={() => {
+        setMode("today");
+        setTime("");
+      }}
+      aria-pressed={mode === "today"}
+      className={`rounded-xl px-3 py-3 text-sm font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${
+        mode === "today"
+          ? "bg-brand-gold text-white shadow-sm"
+          : "text-foreground hover:bg-background"
+      }`}
+    >
+      Aujourd’hui
+    </button>
+
+    <button
+      type="button"
+      disabled={!canOrderTomorrow}
+      onClick={() => {
+        setMode("tomorrow");
+        setTime("");
+      }}
+      aria-pressed={mode === "tomorrow"}
+      className={`rounded-xl px-3 py-3 text-sm font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${
+        mode === "tomorrow"
+          ? "bg-brand-gold text-white shadow-sm"
+          : "text-foreground hover:bg-background"
+      }`}
+    >
+      Demain
+    </button>
+  </div>
+
+  {!canOrderToday && mode === "today" ? (
+    <p className="rounded-xl bg-muted p-3 text-sm text-muted-foreground">
+      Pause Gourmande est fermée aujourd’hui.
+    </p>
+  ) : !canOrderTomorrow && mode === "tomorrow" ? (
+    <p className="rounded-xl bg-muted p-3 text-sm text-muted-foreground">
+      Pause Gourmande est fermée demain.
+    </p>
+  ) : (
+    <div className="space-y-3 rounded-2xl border border-brand-gold/20 bg-brand-cream/30 p-4">
+      <div>
+        <p className="text-sm font-semibold text-foreground">
+          Choisissez votre horaire
+        </p>
+        <p className="mt-1 text-xs text-muted-foreground">
+          {mode === "today" ? "Aujourd’hui" : "Demain"}
+          {" · "}
+          Créneaux selon les horaires de Pause Gourmande
+        </p>
+      </div>
+
+      {loadingSlots ? (
+        <div className="grid grid-cols-3 gap-2">
+          {Array.from({ length: 6 }).map((_, index) => (
+            <div
+              key={index}
+              className="h-14 animate-pulse rounded-xl bg-muted"
+            />
+          ))}
+        </div>
+      ) : availableSlots.length > 0 ? (
+        <div className="grid grid-cols-3 gap-2">
+          {availableSlots.map((slot) => {
+            const selected = time === slot.slot_time;
+            const unavailable = !slot.available;
+
+            return (
+              <button
+                key={slot.slot_time}
+                type="button"
+                disabled={unavailable}
+                aria-pressed={selected}
+                onClick={() => setTime(slot.slot_time)}
+                className={`min-h-14 rounded-xl border px-2 py-2 text-center transition-all ${
+                  unavailable
+                    ? "cursor-not-allowed border-red-800 bg-red-800 text-white opacity-90"
+                    : selected
+                      ? "border-brand-gold bg-brand-gold text-white shadow-sm"
+                      : "border-border bg-background text-foreground hover:border-brand-gold/70 hover:bg-brand-gold/5"
+                }`}
               >
-                <label
-                  htmlFor="today"
-                  className="flex items-center gap-2 rounded-2xl border p-3 cursor-pointer data-[checked=true]:border-brand-gold data-[checked=true]:bg-brand-gold/5"
-                  data-checked={mode === "today"}
-                >
-                  <RadioGroupItem id="today" value="today" />
-                  <span className="text-sm font-medium">Aujourd'hui</span>
-                </label>
-                <label
-                  htmlFor="tomorrow"
-                  className="flex items-center gap-2 rounded-2xl border p-3 cursor-pointer data-[checked=true]:border-brand-gold data-[checked=true]:bg-brand-gold/5"
-                  data-checked={mode === "tomorrow"}
-                >
-                  <RadioGroupItem id="tomorrow" value="tomorrow" />
-                  <span className="text-sm font-medium">Demain</span>
-                </label>
-              </RadioGroup>
-              <div className="space-y-1">
-                <Label className="text-xs">Heure souhaitée</Label>
-                <Input type="time" value={time} onChange={(e) => setTime(e.target.value)} />
-              </div>
+                <span className="block text-sm font-semibold">
+                  {slot.slot_time}
+                </span>
+                <span className="mt-0.5 block text-[10px]">
+                  {unavailable
+                    ? "Complet"
+                    : `${slot.remaining} place${slot.remaining > 1 ? "s" : ""}`}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      ) : (
+        <p className="rounded-xl bg-background p-3 text-sm text-muted-foreground">
+          Aucun créneau n'est disponible pour le moment.
+        </p>
+      )}
+
+      {slotsError && (
+        <p className="text-xs text-destructive">{slotsError}</p>
+      )}
+
+      {receptionMode === "delivery" && (
+        <p className="text-xs text-muted-foreground">
+          Un délai supplémentaire peut être nécessaire pour la livraison.
+        </p>
+      )}
+
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-brand-gold/15 pt-3">
+        <div className="flex items-center gap-1.5">
+          <span className="size-2.5 rounded-full bg-brand-gold" />
+          <span className="text-[11px] text-muted-foreground">
+            Votre sélection
+          </span>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <span className="size-2.5 rounded-full border border-border bg-background" />
+          <span className="text-[11px] text-muted-foreground">
+            Disponible
+          </span>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <span className="size-2.5 rounded-full bg-rose-400/70" />
+          <span className="text-[11px] text-muted-foreground">
+            Complet
+          </span>
+        </div>
+      </div>
+    </div>
+  )}
+</div>
+
             </>
           )}
         </div>
@@ -786,8 +1139,17 @@ export function CartSheet({ children }: { children: React.ReactNode }) {
               )}{" "}
               pépites de fidélité
             </p>
+            {!canOrderToday && !canOrderTomorrow && (
+              <p className="text-sm text-muted-foreground text-center">
+                Les commandes sont temporairement indisponibles.
+              </p>
+            )}
+
             <Button
-              disabled={submitting}
+              disabled={
+                submitting ||
+                (!canOrderToday && !canOrderTomorrow)
+              }
               onClick={validate}
               className="w-full h-12 rounded-full text-base font-semibold"
             >

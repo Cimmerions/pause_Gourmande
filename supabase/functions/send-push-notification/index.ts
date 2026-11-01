@@ -1,12 +1,16 @@
+// @ts-ignore Deno resolves npm: specifiers at runtime; the editor's TypeScript resolver may not.
 import webpush from "npm:web-push@3.6.7";
+// @ts-ignore Deno resolves npm: specifiers at runtime; the editor's TypeScript resolver may not.
 import { createClient } from "npm:@supabase/supabase-js@2";
 
-const VAPID_PUBLIC_KEY = Deno.env.get("VAPID_PUBLIC_KEY");
-const VAPID_PRIVATE_KEY = Deno.env.get("VAPID_PRIVATE_KEY");
-const VAPID_SUBJECT = Deno.env.get("VAPID_SUBJECT");
+const deno = (globalThis as typeof globalThis & { Deno: any }).Deno;
 
-const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
-const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get(
+const VAPID_PUBLIC_KEY = deno.env.get("VAPID_PUBLIC_KEY");
+const VAPID_PRIVATE_KEY = deno.env.get("VAPID_PRIVATE_KEY");
+const VAPID_SUBJECT = deno.env.get("VAPID_SUBJECT");
+
+const SUPABASE_URL = deno.env.get("SUPABASE_URL");
+const SUPABASE_SERVICE_ROLE_KEY = deno.env.get(
   "SUPABASE_SERVICE_ROLE_KEY"
 );
 
@@ -35,7 +39,7 @@ const supabase = createClient(
   SUPABASE_SERVICE_ROLE_KEY
 );
 
-Deno.serve(async (req) => {
+deno.serve(async (req: Request) => {
   try {
     if (req.method === "OPTIONS") {
       return new Response("ok", {
@@ -69,7 +73,7 @@ Deno.serve(async (req) => {
 
     const webhookKey = req.headers.get("X-Webhook-Key");
     const expectedWebhookKey =
-      Deno.env.get("PUSH_WEBHOOK_KEY");
+      deno.env.get("PUSH_WEBHOOK_KEY");
 
     if (!expectedWebhookKey) {
       console.error(
@@ -114,47 +118,101 @@ Deno.serve(async (req) => {
     // DONNÉES DE LA NOTIFICATION
     // ─────────────────────────────────────────────
 
-    const body = await req.json();
+    const body: unknown = await req.json();
+
+if (
+  typeof body !== "object" ||
+  body === null ||
+  Array.isArray(body)
+) {
+  return new Response(
+    JSON.stringify({
+      success: false,
+      error: "Corps JSON invalide.",
+    }),
+    {
+      status: 400,
+      headers: {
+        "Content-Type": "application/json",
+        "Access-Control-Allow-Origin": "*",
+      },
+    }
+  );
+}
+
+const notification = body as Record<string, unknown>;
 
     const title =
-      body.title || "Pause Gourmande";
+      typeof notification.title === "string" &&
+      notification.title.trim()
+        ? notification.title.trim()
+        : "Pause Gourmande";
 
     const message =
-      body.body || "Nouvelle notification";
+      typeof notification.body === "string" &&
+      notification.body.trim()
+        ? notification.body.trim()
+        : "Nouvelle notification";
 
     const url =
-      body.url || "/dashboard";
+      typeof notification.url === "string"
+        ? notification.url
+        : "/";
 
-    const tag =
-      body.tag ||
-      "pause-gourmande-notification";
+    const allowedUrls = [
+      "/",
+      "/dashboard",
+      "/orders-page",
+      "/driver",
+    ];
 
-    const target =
-      body.target || "all";
-
-    const customerPhone =
-      body.customer_phone || null;
-
-    console.log(
-      "📨 Notification Push :",
+  if (!allowedUrls.includes(url)) {
+    return new Response(
+      JSON.stringify({
+        success: false,
+        error: "URL de notification non autorisée.",
+      }),
       {
-        title,
-        target,
-        customerPhone,
+        status: 400,
+        headers: {
+          "Content-Type": "application/json",
+          "Access-Control-Allow-Origin": "*",
+        },
       }
     );
+  }
+
+    const tag =
+      typeof notification.tag === "string" &&
+      notification.tag.trim()
+        ? notification.tag.trim()
+        : "pause-gourmande-notification";
+
+    const target =
+      typeof notification.target === "string"
+        ? notification.target
+        : null;
+
+    const customerPhone =
+      notification.customer_phone ?? null;
+
+    const driverUserId =
+      notification.driver_user_id ?? null;
+
+    console.log("📨 Notification Push :", { target });
 
     // ─────────────────────────────────────────────
     // VALIDATION DE LA CIBLE
     // ─────────────────────────────────────────────
 
     if (
-      !["admin", "client", "all"].includes(target)
+      !target ||
+      !["admin", "client", "driver"].includes(target)
     ) {
       return new Response(
         JSON.stringify({
           success: false,
-          error: "Cible Push invalide.",
+          error: "Destinataire invalide ou manquant.",
         }),
         {
           status: 400,
@@ -168,13 +226,16 @@ Deno.serve(async (req) => {
 
     if (
       target === "client" &&
-      !customerPhone
+      (
+        typeof customerPhone !== "string" ||
+        !/^[0-9]{8}$/.test(customerPhone)
+      )
     ) {
       return new Response(
         JSON.stringify({
           success: false,
           error:
-            "customer_phone est requis pour une notification client.",
+            "customer_phone est requis et doit contenir exactement 8 chiffres.",
         }),
         {
           status: 400,
@@ -185,6 +246,28 @@ Deno.serve(async (req) => {
         }
       );
     }
+
+    if (
+  target === "driver" &&
+  (
+    typeof driverUserId !== "string" ||
+    !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(driverUserId)
+  )
+) {
+  return new Response(
+    JSON.stringify({
+      success: false,
+      error: "driver_user_id est requis et doit être un UUID valide.",
+    }),
+    {
+      status: 400,
+      headers: {
+        "Content-Type": "application/json",
+        "Access-Control-Allow-Origin": "*",
+      },
+    }
+  );
+}
 
     // ─────────────────────────────────────────────
     // RÉCUPÉRATION DES ABONNEMENTS
@@ -197,8 +280,38 @@ Deno.serve(async (req) => {
       );
 
     if (target === "admin") {
-      query = query.not("user_id", "is", null);
-    }
+  const { data: admins, error: adminsError } = await supabase
+    .from("admin_users")
+    .select("user_id");
+
+  if (adminsError) {
+    throw adminsError;
+  }
+
+  const adminIds = (admins ?? []).map((admin: { user_id: string }) => admin.user_id);
+
+  if (adminIds.length === 0) {
+    return new Response(
+      JSON.stringify({
+        success: true,
+        message: "Aucun administrateur enregistré.",
+        sent: 0,
+        failed: 0,
+        removed: 0,
+        total: 0,
+      }),
+      {
+        status: 200,
+        headers: {
+          "Content-Type": "application/json",
+          "Access-Control-Allow-Origin": "*",
+        },
+      }
+    );
+  }
+
+  query = query.in("user_id", adminIds);
+}
 
     if (target === "client") {
       query = query
@@ -208,6 +321,76 @@ Deno.serve(async (req) => {
           customerPhone
         );
     }
+
+   if (target === "driver") {
+  // Vérifier que l'accès aux livreurs est globalement activé.
+  const { data: driverConfig, error: configError } = await supabase
+    .from("driver_access_config")
+    .select("id, enabled")
+    .eq("id", true)
+    .eq("enabled", true)
+    .maybeSingle();
+
+  if (configError) {
+    throw configError;
+  }
+
+  if (!driverConfig) {
+    return new Response(
+      JSON.stringify({
+        success: true,
+        message: "L'accès aux livreurs est désactivé.",
+        sent: 0,
+        failed: 0,
+        removed: 0,
+        total: 0,
+      }),
+      {
+        status: 200,
+        headers: {
+          "Content-Type": "application/json",
+          "Access-Control-Allow-Origin": "*",
+        },
+      }
+    );
+  }
+
+  // Vérifier que le destinataire est un livreur actif.
+  const { data: driver, error: lookupError } = await supabase
+    .from("delivery_drivers")
+    .select("user_id")
+    .eq("user_id", driverUserId)
+    .eq("active", true)
+    .maybeSingle();
+
+  if (lookupError) {
+    throw lookupError;
+  }
+
+  if (!driver) {
+    return new Response(
+      JSON.stringify({
+        success: true,
+        message: "Aucun livreur actif correspondant.",
+        sent: 0,
+        failed: 0,
+        removed: 0,
+        total: 0,
+      }),
+      {
+        status: 200,
+        headers: {
+          "Content-Type": "application/json",
+          "Access-Control-Allow-Origin": "*",
+        },
+      }
+    );
+  }
+
+  query = query
+    .eq("user_id", driver.user_id)
+    .is("customer_phone", null);
+}
 
     const {
       data: subscriptions,
@@ -335,7 +518,8 @@ Deno.serve(async (req) => {
             .eq(
               "id",
               subscription.id
-            );
+            )
+            .eq("endpoint", subscription.endpoint);
 
           if (deleteError) {
             console.error(

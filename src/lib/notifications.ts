@@ -1,4 +1,5 @@
 import { supabase } from "./supabase";
+import { adminSupabase } from "./admin-supabase";
 
 export type NotificationType =
   | "new_order"
@@ -69,7 +70,7 @@ export async function createNotification({
  * affichées dans la cloche du vendeur.
  */
 export async function getNotifications(limit = 30) {
-  const { data, error } = await supabase
+  const { data, error } = await adminSupabase
     .from("notifications")
     .select("*")
     .not(
@@ -98,7 +99,7 @@ export async function getNotifications(limit = 30) {
  * Compte les notifications non lues utiles au dashboard vendeur.
  */
 export async function getUnreadNotificationCount() {
-  const { count, error } = await supabase
+  const { count, error } = await adminSupabase
     .from("notifications")
     .select("*", {
       count: "exact",
@@ -129,7 +130,7 @@ export async function getUnreadNotificationCount() {
 export async function markNotificationAsRead(
   id: number
 ) {
-  const { error } = await supabase
+  const { error } = await adminSupabase
     .from("notifications")
     .update({
       read: true,
@@ -155,7 +156,7 @@ export async function markNotificationAsRead(
  * puisqu'elles ne sont pas affichées dans le dashboard.
  */
 export async function markAllNotificationsAsRead() {
-  const { error } = await supabase
+  const { error } = await adminSupabase
     .from("notifications")
     .update({
       read: true,
@@ -182,7 +183,7 @@ export async function markAllNotificationsAsRead() {
 export function subscribeToNotifications(
   onNotification: (notification: Notification) => void
 ) {
-  const channel = supabase
+  const channel = adminSupabase
     .channel("notifications-realtime")
     .on(
       "postgres_changes",
@@ -211,6 +212,6 @@ export function subscribeToNotifications(
     .subscribe();
 
   return () => {
-    supabase.removeChannel(channel);
+    adminSupabase.removeChannel(channel);
   };
 }

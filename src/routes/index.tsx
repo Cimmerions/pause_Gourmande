@@ -6,9 +6,11 @@ import {
   Heart,
   Sparkles,
   Copy,
+  Send,
+  Gift,
+  ShoppingBag,
   MapPin,
   Clock,
-  LayoutDashboard,
   UserRound,
   HeartHandshake
 } from "lucide-react";
@@ -20,10 +22,11 @@ import { useCart } from "@/lib/cart-store";
 import { ProductCard } from "@/components/ProductCard";
 import { LuckyWheel } from "@/components/LuckyWheel";
 import { CartSheet } from "@/components/CartSheet";
-import { findCustomer, getCurrentCustomer } from "@/lib/customers";
+import { getCurrentCustomer } from "@/lib/customers";
 import {
   registerCustomerPushSubscription,
   getCustomerPushStatus,
+  unregisterCustomerPushSubscription,
   needsIOSHomeScreenInstall,
 } from "@/lib/push";
 import { getActiveLocation, type Location } from "@/lib/locations";
@@ -157,78 +160,95 @@ function Home() {
     };
   }, []);
 
+async function checkLoyalty(phone: string) {
+  setLoyaltyPhone(phone);
 
-  async function checkLoyalty(phone: string) {
-    setLoyaltyPhone(phone);
-  
-    if (phone.length !== 8) {
-      setPoints(0);
-      setReferralCode("");
-      setPushStatus("disabled");
-      return;
-    }
-  
-    const [customer, currentPushStatus] = await Promise.all([
-      findCustomer(phone),
-      getCustomerPushStatus(phone),
-    ]);
-  
-    setPushStatus(
-      currentPushStatus === "enabled"
-        ? "enabled"
-        : "disabled"
-    );
-  
-    if (!customer) {
-      setPoints(0);
-      setReferralCode("");
-  
-      toast.info("Aucun espace fidélité trouvé pour ce numéro.");
-  
-      return;
-    }
-  
-    setPoints(customer.points ?? 0);
-    setReferralCode(customer.referral_code ?? "");
+  if (phone.length !== 8) {
+    setPoints(0);
+    setReferralCode("");
+    setPushStatus("disabled");
+    return;
   }
 
-    async function enableCustomerNotifications() {
-      if (loyaltyPhone.length !== 8) {
-        toast.error("Entrez d'abord votre numéro de téléphone.");
-        return;
-      }
-    
-      if (pushStatus === "enabled") {
-        return;
-      }
+  const [customer, currentPushStatus] = await Promise.all([
+    getCurrentCustomer(),
+    getCustomerPushStatus(phone),
+  ]);
 
-      if (needsIOSHomeScreenInstall()) {
-        toast.info("Ajoutez d'abord Pause Gourmande à votre écran d'accueil.", {
-          description:
-            "Sur iPhone, les notifications nécessitent l'application installée depuis Safari.",
-        });
-        return;
-      }
-    
-      try {
-        setEnablingNotifications(true);
-    
-        await registerCustomerPushSubscription(loyaltyPhone);
-    
-        setPushStatus("enabled");
-    
-        toast.success("Notifications activées", {
-          description:
-            "Vous recevrez maintenant les notifications concernant vos commandes.",
-        });
-      } catch (error) {
-        console.error("Erreur activation notifications :", error);
-    
-        toast.error("Impossible d'activer les notifications.");
-      } finally {
-        setEnablingNotifications(false);
-      }
+  setPushStatus(
+    currentPushStatus === "enabled" ? "enabled" : "disabled"
+  );
+
+  if (!customer || String(customer.phone ?? "") !== phone) {
+    setPoints(0);
+    setReferralCode("");
+    toast.info("Aucun espace fidélité associé à ce compte pour ce numéro.");
+    return;
+  }
+
+  setPoints(customer.points ?? 0);
+  setReferralCode(customer.referral_code ?? "");
+}
+
+    async function toggleCustomerNotifications() {
+  if (!/^[0-9]{8}$/.test(loyaltyPhone)) {
+    toast.error("Entrez d'abord votre numéro de téléphone.");
+    return;
+  }
+
+  if (needsIOSHomeScreenInstall() && pushStatus !== "enabled") {
+    toast.info("Ajoutez d'abord Pause Gourmande à votre écran d'accueil.", {
+      description:
+        "Sur iPhone, les notifications nécessitent l'application installée depuis Safari.",
+    });
+    return;
+  }
+
+  if (pushStatus === "blocked") {
+    toast.info("Les notifications sont bloquées dans les paramètres du navigateur.");
+    return;
+  }
+
+  try {
+    setEnablingNotifications(true);
+
+    if (pushStatus === "enabled") {
+      await unregisterCustomerPushSubscription(loyaltyPhone);
+      setPushStatus("disabled");
+
+      toast.success("Notifications désactivées", {
+        description: "Vous ne recevrez plus les notifications de commandes sur cet appareil.",
+      });
+
+      return;
     }
+
+    await registerCustomerPushSubscription(loyaltyPhone);
+    setPushStatus("enabled");
+
+    toast.success("Notifications activées", {
+      description:
+        "Vous recevrez maintenant les notifications concernant vos commandes.",
+    });
+  } catch (error) {
+    console.error("Erreur de gestion des notifications :", error);
+
+    try {
+      const status = await getCustomerPushStatus(loyaltyPhone);
+      setPushStatus(status);
+    } catch (statusError) {
+      console.error("Erreur de vérification des notifications :", statusError);
+    }
+
+    toast.error(
+      error instanceof Error
+        ? error.message
+        : "Impossible de modifier les notifications."
+    );
+  } finally {
+    setEnablingNotifications(false);
+  }
+}
 
     const supplements = useMemo(
       () => products.filter((p) => p.category === "Suppléments"),
@@ -237,7 +257,7 @@ function Home() {
 
     const filtered = useMemo(() => {
       const q = query.trim().toLowerCase();
-    
+
       return products.filter(
         (p) =>
           p.category !== "Suppléments" &&
@@ -480,7 +500,7 @@ function Home() {
             </ul>
           </div>
 
-          <LuckyWheel />
+          <LuckyWheel onPointsChange={setPoints} />
         </div>
       </section>
 
@@ -527,51 +547,45 @@ function Home() {
                   </div>
                 )}
 
-            {loyaltyPhone.length === 8 && pushStatus !== "enabled" && (
-             <div className="w-full mt-4 rounded-2xl border border-brand-gold/30 bg-brand-gold/5 p-4">
-              {needsIOSInstall ? (
-                <div className="space-y-1.5">
-                  <p className="font-semibold text-brand-deep">
-                    Ajouter l'application à votre écran d'accueil.
-                  </p>
-
-                  <p className="text-xs text-muted-foreground">
-                    Veuillez ouvrir Pause Gourmande depuis l'icône de votre écran
-                    d'accueil pour pouvoir activer les notifications.
-                  </p>
+                {loyaltyPhone.length === 8 && (
+  <div className="w-full mt-4 rounded-2xl border border-brand-gold/30 bg-brand-gold/5 p-4">
+    {pushStatus === "blocked" ? (
+      <div className="text-center">
+        <p className="font-semibold text-destructive">
+          Notifications bloquées
+        </p>
+        <p className="mt-1 text-xs text-muted-foreground">
+          Autorisez-les dans les paramètres de votre navigateur.
+        </p>
+      </div>
+    ) : needsIOSInstall && pushStatus !== "enabled" ? (
+      <div className="space-y-1.5">
+        <p className="font-semibold text-brand-deep">
+          Ajouter l'application à votre écran d'accueil.
+        </p>
+        <p className="text-xs text-muted-foreground">
+          Veuillez ouvrir Pause Gourmande depuis l'icône de votre écran
+          d'accueil pour pouvoir activer les notifications.
+        </p>
+      </div>
+    ) : (
+      <Button
+        type="button"
+        variant="outline"
+        disabled={enablingNotifications}
+        className="w-full h-12 rounded-2xl"
+        onClick={toggleCustomerNotifications}
+      >
+        {enablingNotifications
+          ? "Modification…"
+          : pushStatus === "enabled"
+            ? "Désactiver les notifications"
+            : "🔔 Activer les notifications"}
+      </Button>
+    )}
+  </div>
+)}
                 </div>
-              ) : (
-            <>
-              {pushStatus === "disabled" && (
-                <Button
-                  type="button"
-                  variant="outline"
-                  disabled={enablingNotifications}
-                  className="w-full h-12 rounded-2xl"
-                  onClick={enableCustomerNotifications}
-                >
-                  {enablingNotifications
-                    ? "Activation…"
-                    : "🔔 Activer les notifications"}
-                </Button>
-              )}
-
-              {pushStatus === "blocked" && (
-                <div className="text-center">
-                  <p className="font-semibold text-destructive">
-                    Notifications bloquées
-                  </p>
-
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    Autorisez-les dans votre navigateur.
-                  </p>
-                </div>
-              )}
-            </>
-          )}
-        </div>
-      )}
-    </div>
 
                 <div className="flex items-center justify-between mb-6">
                   <div className="flex items-center gap-4">
@@ -585,7 +599,7 @@ function Home() {
                       <p className="text-3xl font-semibold">{points}</p>
                     </div>
                   </div>
-  
+
                 </div>
                 <div className="w-full h-2 bg-brand-gold/10 rounded-full overflow-hidden">
                   <div
@@ -626,13 +640,13 @@ function Home() {
               </div>
               <h3 className="text-3xl font-semibold mb-3 relative">Partager le Bonheur</h3>
               <p className="text-white/85 mb-10 text-pretty leading-relaxed relative">
-                Invitez vos amis et recevez chacun une garniture premium offerte sur votre
-                prochaine commande.
+                Invitez vos amis et recevez une petite récompense offerte sur votre
+                prochaine commande :)
               </p>
               <div className="flex flex-col sm:flex-row gap-3 relative">
                 <div className="flex-1 bg-white/10 backdrop-blur border border-white/20 rounded-2xl px-5 py-4 font-mono text-sm flex items-center justify-between">
                   <span>
-                    {referralCode || "Entrez votre numéro dans l'espace douceur"}
+                    {referralCode || "PG-XXXX..."}
                   </span>
                   <span className="text-[10px] font-bold opacity-50 uppercase">Code</span>
                 </div>
@@ -643,6 +657,38 @@ function Home() {
                   <Copy className="size-4" /> Copier
                 </button>
               </div>
+
+
+              <div className="mt-6 border-t border-white/20 pt-5 relative">
+                <p className="flex items-center gap-2 text-sm font-semibold mb-4">
+                  <Gift className="size-4 shrink-0" />
+                  Comment inviter un ami ?
+                </p>
+
+                <div className="space-y-3 text-sm text-white/90">
+                  <p className="flex items-center gap-3">
+                    <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-white/15">
+                      <Copy className="size-4" />
+                    </span>
+                    Copie ton code avec le bouton ci-dessus.
+                  </p>
+
+                  <p className="flex items-center gap-3">
+                    <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-white/15">
+                      <Send className="size-4" />
+                    </span>
+                    Envoie-le à un ami par message.
+                  </p>
+
+                  <p className="flex items-center gap-3">
+                    <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-white/15">
+                      <ShoppingBag className="size-4" />
+                    </span>
+                    Ton ami utilise ton code lors de sa commande.
+                  </p>
+                </div>
+              </div>
+
             </div>
           </div>
         </div>
@@ -766,13 +812,7 @@ function Home() {
             © 2026 Pause Gourmande • Fait main avec passion à Lomé.
           </p>
 
-          <Link
-            to="/admin-login"
-            className="inline-flex items-center gap-2 mt-5 text-xs font-medium text-muted-foreground/60 hover:text-brand-gold transition"
-          >
-            <LayoutDashboard className="size-3.5" />
-              Espace équipe
-            </Link>
+
           </div>
         </footer>
       </div>

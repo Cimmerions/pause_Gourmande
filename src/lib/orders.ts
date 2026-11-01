@@ -1,17 +1,6 @@
 import { supabase } from "./supabase";
+import { adminSupabase } from "./admin-supabase";
 import type { Order } from "./cart-store";
-
-import {
-  findCustomer,
-  createCustomer,
-  findCustomerByReferralCode,
-} from "./customers";
-
-import {
-  saveReward,
-  pickReferralSurprise,
-} from "./rewards";
-
 
 export async function createOrder(
   order: Order,
@@ -20,7 +9,7 @@ export async function createOrder(
 ) {
   try {
     const { data, error } = await supabase.rpc(
-      "create_order_secure",
+      "create_order_secure_with_referral",
       {
         p_customer_name: order.customerName,
         p_phone: order.phone,
@@ -42,6 +31,7 @@ export async function createOrder(
           order.receptionMode === "delivery"
             ? order.deliveryLongitude ?? null
             : null,
+        p_referral_code: referralCode?.trim().toUpperCase() || null,
       }
     );
 
@@ -53,63 +43,25 @@ export async function createOrder(
       return null;
     }
 
-    let acceptedReferralCode: string | null = null;
-
-    let customer = await findCustomer(order.phone);
-
-    if (!customer) {
-      let referredBy: number | undefined = undefined;
-      let referrer = null;
-
-      if (referralCode?.trim()) {
-        referrer = await findCustomerByReferralCode(
-          referralCode.trim().toUpperCase()
-        );
-
-        if (
-          referrer &&
-          referrer.phone !== order.phone
-        ) {
-          referredBy = referrer.id;
-          acceptedReferralCode =
-            referralCode.trim().toUpperCase();
-        } else {
-          referrer = null;
-        }
-      }
-
-      customer = await createCustomer(
-        order.customerName,
-        order.phone,
-        referredBy
+    if (
+      !data ||
+      typeof data !== "object" ||
+      !("order" in data) ||
+      !data.order
+    ) {
+      console.error(
+        "Réponse inattendue du serveur lors de la création de la commande :",
+        data
       );
-
-      if (customer && referrer) {
-        const surprise = await pickReferralSurprise();
-
-        if (!surprise) {
-          console.error(
-            "Impossible d'attribuer la surprise de parrainage."
-          );
-        } else {
-          await saveReward(
-            referrer.phone,
-            surprise,
-            "referral"
-          );
-
-          console.log("PARRAINAGE VALIDÉ :", {
-            parrain: referrer.phone,
-            filleul: customer.phone,
-            surprise,
-          });
-        }
-      }
+      return null;
     }
 
     return {
-      data,
-      acceptedReferralCode,
+      data: data.order,
+      acceptedReferralCode:
+        typeof data.acceptedReferralCode === "string"
+          ? data.acceptedReferralCode
+          : null,
     };
   } catch (error) {
     console.error(
@@ -121,7 +73,7 @@ export async function createOrder(
 }
 
 export async function getOrders() {
-    const { data, error } = await supabase
+    const { data, error } = await adminSupabase
       .from("orders")
       .select(`
         *,
@@ -140,7 +92,7 @@ export async function getOrders() {
   
 export async function getCustomerOrders() {
   const { data, error } = await supabase.rpc(
-    "get_my_orders_with_items"
+    "get_my_orders_with_items_v2"
   );
 
   if (error) {
@@ -156,14 +108,38 @@ export async function getCustomerOrders() {
   };
 }
 
-
   export async function updateOrderStatus(
     id: string,
     status: string
   ) {
+
+    // Confirmation d'une commande de retrait
+    if (status === "preparing") {
+      const { data, error } = await adminSupabase.rpc(
+        "confirm_order",
+        {
+          order_id: id,
+        }
+      );
+
+      if (error) {
+        console.error("Erreur confirmation commande :", error);
+
+        return {
+          data: null,
+          error,
+        };
+      }
+
+      return {
+        data,
+        error: null,
+      };
+    }
+
     // Validation d'une commande
     if (status === "done") {
-      const { data, error } = await supabase.rpc(
+      const { data, error } = await adminSupabase.rpc(
         "complete_order",
         {
           order_id: id,
@@ -190,7 +166,7 @@ export async function getCustomerOrders() {
   
     // Annulation d'une commande
     if (status === "cancelled") {
-      const { data, error } = await supabase.rpc(
+      const { data, error } = await adminSupabase.rpc(
         "cancel_order",
         {
           order_id: id,
@@ -258,7 +234,7 @@ export async function getCustomerOrders() {
       };
     }
   
-    const { data, error } = await supabase.rpc(
+    const { data, error } = await adminSupabase.rpc(
       "propose_delivery_fee",
       {
         p_order_id: orderId,
@@ -320,3 +296,92 @@ export async function getCustomerOrders() {
       error,
     };
   }
+
+
+import { driverSupabase } from "./driver-supabase";
+
+export async function getDriverOrders() {
+  const { data, error } = await driverSupabase.rpc("get_driver_orders");
+
+  if (error) {
+    console.error("Erreur récupération des livraisons :", error);
+    return { data: null, error };
+  }
+
+  return { data, error: null };
+}
+
+export async function startDriverDelivery(orderId: string) {
+  const { data, error } = await driverSupabase.rpc("start_delivery", {
+    order_id: orderId,
+  });
+
+  if (error) {
+    console.error("Erreur démarrage livraison :", error);
+  }
+
+  return { data, error };
+}
+
+export async function completeDriverDelivery(orderId: string) {
+  const { data, error } = await driverSupabase.rpc("complete_delivery", {
+    order_id: orderId,
+  });
+
+  if (error) {
+    console.error("Erreur confirmation livraison :", error);
+  }
+
+  return { data, error };
+}
+
+export type ActiveDeliveryDriver = {
+  user_id: string;
+  display_name: string;
+};
+
+export async function getActiveDeliveryDrivers(): Promise<ActiveDeliveryDriver[]> {
+  const { data, error } = await adminSupabase
+    .from("delivery_drivers")
+    .select("user_id, display_name")
+    .eq("active", true)
+    .eq("is_available", true)
+    .order("display_name");
+
+  if (error) {
+    console.error("Erreur chargement des livreurs disponibles :", error);
+    throw error;
+  }
+
+  return data ?? [];
+}
+
+export async function assignDeliveryDriver(
+  orderId: string,
+  driverUserId: string | null
+): Promise<void> {
+  const { error } = await adminSupabase.rpc(
+    "assign_delivery_driver",
+    {
+      p_order_id: orderId,
+      p_driver_user_id: driverUserId,
+    }
+  );
+
+  if (error) {
+    throw error;
+  }
+}
+
+export async function markDeliveryReady(orderId: string) {
+  const { data, error } = await adminSupabase.rpc(
+    "mark_delivery_ready",
+    { p_order_id: orderId }
+  );
+
+  if (error) {
+    console.error("Erreur préparation livraison :", error);
+  }
+
+  return { data, error };
+}

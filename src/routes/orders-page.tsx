@@ -35,12 +35,16 @@ type CustomerOrder = {
   mode: string;
   time: string;
   total: number;
-  status: "pending" | "done" | "cancelled";
+  status: "pending" | "preparing" | "done" | "cancelled";
+  order_timing: "asap" | "scheduled" | null;
+  scheduled_for: string | null;
   created_at: string;
   reception_mode: "pickup" | "delivery" | null;
   delivery_latitude: number | null;
   delivery_longitude: number | null;
   delivery_fee: number;
+  delivery_estimate_min_minutes: number | null;
+  delivery_estimate_max_minutes: number | null;
   delivery_status:
     | "awaiting_fee"
     | "awaiting_customer"
@@ -57,9 +61,62 @@ function formatPrice(value: number) {
   return new Intl.NumberFormat("fr-FR").format(value) + " F";
 }
 
+function getOrderTimeLabel(order: CustomerOrder) {
+  const timeZone = "Africa/Lome";
+
+  if (order.scheduled_for) {
+    const date = new Date(order.scheduled_for);
+    const heure = date.toLocaleTimeString("fr-FR", {
+      hour: "2-digit",
+      minute: "2-digit",
+      timeZone,
+    });
+
+    if (order.order_timing === "asap") {
+      return `Aujourd'hui · créneau prévu à ${heure}`;
+    }
+
+    if (order.order_timing === "scheduled") {
+      const jour = date.toLocaleDateString("fr-FR", {
+        day: "2-digit",
+        month: "2-digit",
+        timeZone,
+      });
+
+      return `Programmée pour le ${jour} à ${heure}`;
+    }
+  }
+
+  if (order.order_timing === "asap") {
+    return order.status === "pending"
+      ? "Aujourd'hui · en attente de confirmation"
+      : "Aujourd'hui";
+  }
+
+  if (order.order_timing === "scheduled") {
+    return `Programmé à ${order.time}`;
+  }
+
+  return order.time;
+}
+
 function getStatusLabel(order: CustomerOrder) {
   if (order.status === "cancelled") {
     return "Commande annulée";
+  }
+
+  if (
+    order.reception_mode === "delivery" &&
+    order.delivery_status === "accepted"
+  ) {
+    return "Livraison acceptée";
+  }
+
+  if (
+    order.reception_mode === "delivery" &&
+    order.delivery_status === "refused"
+  ) {
+    return "Livraison refusée";
   }
 
   if (
@@ -73,14 +130,22 @@ function getStatusLabel(order: CustomerOrder) {
     order.reception_mode === "delivery" &&
     order.delivery_status === "awaiting_customer"
   ) {
-    return "Confirmation de livraison requise";
+    return "Confirmation requise";
+  }
+
+  if (order.status === "preparing") {
+    return "En préparation";
   }
 
   if (order.status === "done") {
-    return "Commande confirmée";
+    return "Commande terminée";
   }
 
-  return "Commande en attente";
+  if (order.status === "pending") {
+    return "En attente de confirmation";
+  }
+
+  return "Commande annulée";
 }
 
 function MesCommandesPage() {
@@ -93,16 +158,16 @@ function MesCommandesPage() {
 
   async function loadOrders() {
     setLoadError(false);
-  
+
     const { data, error } = await getCustomerOrders();
-  
+
     if (error) {
       console.error("Erreur de chargement des commandes :", error);
       setLoadError(true);
       toast.error("Impossible de récupérer vos commandes.");
       return;
     }
-  
+
     setOrders((data ?? []) as CustomerOrder[]);
   }
 
@@ -111,7 +176,7 @@ function MesCommandesPage() {
       await loadOrders();
       setLoading(false);
     }
-  
+
     loadInitialOrders();
   }, []);
 
@@ -265,8 +330,8 @@ function MesCommandesPage() {
                       </p>
 
                       <div className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground">
-                        <Clock3 className="h-3.5 w-3.5" />
-                        {order.mode} · {order.time}
+                        <Clock3 className="h-3.5 w-3.5 shrink-0" />
+                        <span>{getOrderTimeLabel(order)}</span>
                       </div>
                     </div>
 
@@ -322,76 +387,104 @@ function MesCommandesPage() {
                     </div>
 
                     {order.reception_mode === "delivery" && (
-                      <>
-                        <div className="flex items-center justify-between text-sm">
-                          <span className="flex items-center gap-2 text-muted-foreground">
-                            <MapPin className="h-4 w-4" />
-                            Livraison
-                          </span>
+  <div className="space-y-3 border-t pt-3">
+    <div className="flex items-center justify-between gap-3 text-sm">
+      <span className="flex items-center gap-2 text-muted-foreground">
+        <MapPin className="h-4 w-4" />
+        Frais de livraison
+      </span>
 
-                          <span className="font-medium">
-                            {order.delivery_fee > 0
-                              ? formatPrice(order.delivery_fee)
-                              : "À confirmer"}
-                          </span>
-                        </div>
+      <span className="font-medium">
+        {order.delivery_status === "awaiting_fee"
+          ? "À confirmer"
+          : formatPrice(Number(order.delivery_fee ?? 0))}
+      </span>
+    </div>
 
-                        {waitingForCustomer && (
-                          <div className="rounded-xl border border-primary/20 bg-primary/5 p-4">
-                            <p className="text-sm font-semibold">
-                              Frais de livraison estimés
-                            </p>
+    {order.delivery_estimate_min_minutes != null &&
+      order.delivery_estimate_max_minutes != null && (
+        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+          <Clock3 className="h-4 w-4 shrink-0" />
+          <span>
+            Délai estimé :{" "}
+            <span className="font-semibold text-foreground">
+              {order.delivery_estimate_min_minutes} à{" "}
+              {order.delivery_estimate_max_minutes} min
+            </span>
+          </span>
+        </div>
+      )}
 
-                            <p className="mt-1 text-base font-bold text-primary">
-                              {formatPrice(order.delivery_fee)}
-                            </p>
+    <div className="flex items-center justify-between gap-3 border-t pt-3 text-sm">
+      <span className="text-muted-foreground">Articles</span>
+      <span>{formatPrice(order.total)}</span>
+    </div>
 
-                            <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
-                              Consultez votre espace client pour valider la livraison.
-                            </p>
+    <div className="flex items-center justify-between gap-3 text-sm">
+      <span className="text-muted-foreground">Livraison</span>
+      <span>
+        {order.delivery_status === "awaiting_fee"
+          ? "À confirmer"
+          : formatPrice(Number(order.delivery_fee ?? 0))}
+      </span>
+    </div>
 
-                            <div className="mt-4 grid grid-cols-2 gap-3">
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  handleAcceptDelivery(order)
-                                }
-                                disabled={isProcessing}
-                                className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-primary px-4 py-3 text-sm font-semibold text-primary-foreground transition-opacity disabled:cursor-not-allowed disabled:opacity-60"
-                              >
-                                <Check className="h-4 w-4" />
+    <div className="flex items-center justify-between gap-3 font-bold">
+      <span>Total à payer</span>
+      <span className="text-primary">
+        {order.delivery_status === "awaiting_fee"
+          ? "À confirmer"
+          : formatPrice(payableTotal)}
+      </span>
+    </div>
 
-                                {isProcessing
-                                  ? "Traitement…"
-                                  : "Accepter"}
-                              </button>
+    {waitingForCustomer ? (
+      <div className="grid grid-cols-1 gap-3 pt-2 sm:grid-cols-2">
+        <button
+          type="button"
+          onClick={() => handleAcceptDelivery(order)}
+          disabled={isProcessing}
+          className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-primary px-4 py-3 text-sm font-semibold text-primary-foreground transition-opacity disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          <Check className="h-4 w-4" />
+          {isProcessing ? "Traitement…" : "Accepter"}
+        </button>
 
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  handleRefuseDelivery(order)
-                                }
-                                disabled={isProcessing}
-                                className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-destructive/30 px-4 py-3 text-sm font-semibold text-destructive transition-colors hover:bg-destructive/5 disabled:cursor-not-allowed disabled:opacity-60"
-                              >
-                                <X className="h-4 w-4" />
-                                Refuser
-                              </button>
-                            </div>
-                          </div>
-                        )}
-                      </>
-                    )}
+        <button
+          type="button"
+          onClick={() => handleRefuseDelivery(order)}
+          disabled={isProcessing}
+          className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl border border-destructive/30 px-4 py-3 text-sm font-semibold text-destructive transition-colors hover:bg-destructive/5 disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          <X className="h-4 w-4" />
+          {isProcessing ? "Traitement…" : "Refuser"}
+        </button>
+      </div>
+    ) : order.status !== "cancelled" &&
+      order.delivery_status === "accepted" ? (
+      <p className="rounded-xl bg-primary/10 px-3 py-2 text-sm font-medium text-primary">
+        <Check className="mr-2 inline h-4 w-4" />
+        Vous avez accepté cette livraison.
+      </p>
+    ) : order.status !== "cancelled" &&
+      order.delivery_status === "refused" ? (
+      <p className="rounded-xl bg-muted px-3 py-2 text-sm font-medium text-muted-foreground">
+        <X className="mr-2 inline h-4 w-4" />
+        Vous avez refusé cette livraison.
+      </p>
+    ) : null}
+  </div>
+)}
 
-                    <div className="flex items-center justify-between gap-3 border-t pt-3">
-                      <span className="font-semibold">
-                        Total à payer
-                      </span>
+                    {order.reception_mode !== "delivery" && (
+  <div className="flex items-center justify-between gap-3 border-t pt-3">
+    <span className="font-semibold">Total à payer</span>
 
-                      <span className="text-lg font-bold text-primary">
-                        {formatPrice(payableTotal)}
-                      </span>
-                    </div>
+    <span className="text-lg font-bold text-primary">
+      {formatPrice(payableTotal)}
+    </span>
+  </div>
+)}
                   </div>
                 </article>
               );
